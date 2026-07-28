@@ -1,0 +1,30 @@
+# AI Campus Companion - Commands Executed
+# ======================================
+#
+# This file contains all commands used to review and run the frontend, backend, and database.
+#
+# Database
+# --------
+# - MongoDB is running locally on port 27017 (confirmed via netstat -ano | findstr 27017)
+#
+# Backend Setup & Run
+# -------------------
+# 1. Navigate to backend directory:
+#    cd backend
+#
+# 2. Activate virtual environment:
+#    .\venv\Scripts\Activate.ps1
+#
+# 3. Run backend server (used this command):
+#    .\venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
+#    - Backend is running at http://127.0.0.1:8000
+#
+# Frontend Setup & Run
+# --------------------
+# 1. Navigate to frontend directory:
+#    cd frontend
+#
+# 2. Run frontend development server (used this command):
+#    npm.cmd run dev
+#    - Frontend is running at http://localhost:5173
+
