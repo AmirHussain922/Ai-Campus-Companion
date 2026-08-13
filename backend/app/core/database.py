@@ -14,6 +14,7 @@ from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
 from app.config import get_settings
+from app.core.utils import set_database_available
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +38,10 @@ async def get_mongo_client() -> AsyncIOMotorClient:
             )
             # Verify connection
             await _client.admin.command('ping')
+            set_database_available(True)
             logger.info("MongoDB connection established successfully")
         except Exception as e:
+            set_database_available(False)
             logger.warning(f"MongoDB connection failed: {e}. Running without database.")
             _client = None
     return _client
@@ -82,8 +85,33 @@ async def setup_database_indexes() -> None:
     db = await get_database()
 
     try:
+        # Lowercase all existing emails to ensure consistency
+        # This is a one-time migration step
+        users_coll = db.users
+        cursor = users_coll.find({"email": {"$regex": "[A-Z]"}})
+        async for user in cursor:
+            old_email = user["email"]
+            new_email = old_email.lower()
+            logger.info(f"Normalizing email: {old_email} -> {new_email}")
+            await users_coll.update_one({"_id": user["_id"]}, {"$set": {"email": new_email}})
+
         # Users collection indexes
-        await db.users.create_index("email", unique=True, background=True)
+        # Use collation for case-insensitive unique index
+        from pymongo.collation import Collation
+        email_collation = Collation(locale="en", strength=2)
+        
+        # Drop old index if it exists without collation to update it
+        try:
+            await db.users.drop_index("email_1")
+        except Exception:
+            pass
+
+        await db.users.create_index(
+            "email", 
+            unique=True, 
+            background=True,
+            collation=email_collation
+        )
         await db.users.create_index("created_at", background=True)
         await db.users.create_index([("is_verified", 1), ("is_active", 1)], background=True)
         logger.info("Users collection indexes created")
@@ -239,6 +267,182 @@ async def setup_database_indexes() -> None:
         )
         logger.info("Proactive email logs collection indexes created")
 
+        # Additional database indexes for performance and security
+        # User progression index for efficient queries
+        await db.users.create_index(
+            [("companion_progression.companion_id", 1), ("_id", 1)],
+            background=True
+        )
+        logger.info("User companion progression index created")
+
+        # Quest indexes for efficient querying
+        await db.user_quests.create_index(
+            [("status", 1), ("created_at", -1)],
+            background=True
+        )
+        logger.info("User quests status index created")
+
+        # Session indexes for performance
+        await db.conversation_sessions.create_index(
+            [("user_id", 1), ("is_active", 1), ("started_at", -1)],
+            background=True
+        )
+        logger.info("Conversation sessions index created")
+
+        # Study buddy profile indexes
+        await db.study_buddy_profiles.create_index(
+            [("user_id", 1)],
+            unique=True,
+            background=True
+        )
+        await db.study_buddy_profiles.create_index(
+            [("is_online", 1), ("last_active", -1)],
+            background=True
+        )
+        logger.info("Study buddy profiles indexes created")
+
+        # Buddy requests indexes
+        await db.buddy_requests.create_index(
+            [("user_id", 1), ("status", 1)],
+            background=True
+        )
+        await db.buddy_requests.create_index(
+            [("requested_at", -1)],
+            background=True
+        )
+        logger.info("Buddy requests indexes created")
+
+        # Study buddy conversations indexes (one-to-one per user pair)
+        await db.study_buddy_conversations.create_index(
+            [("user_a_id", 1), ("user_b_id", 1)],
+            unique=True,
+            background=True
+        )
+        await db.study_buddy_conversations.create_index(
+            [("user_b_id", 1), ("user_a_id", 1)],
+            unique=True,
+            background=True
+        )
+        logger.info("Study buddy conversations indexes created")
+
+        # Study buddy messages indexes
+        await db.study_buddy_messages.create_index(
+            [("conversation_id", 1), ("created_at", -1)],
+            background=True
+        )
+        await db.study_buddy_messages.create_index(
+            [("conversation_id", 1), ("is_read", 1)],
+            background=True
+        )
+        await db.study_buddy_messages.create_index(
+            ["created_at"],
+            expireAfterSeconds=7776000,  # 90 days TTL for messages
+            background=True
+        )
+        logger.info("Study buddy messages indexes created")
+
+        # Q&A questions indexes
+        await db.qa_questions.create_index(
+            [("subject", 1), ("created_at", -1)],
+            background=True
+        )
+        await db.qa_questions.create_index(
+            [("author_id", 1), ("created_at", -1)],
+            background=True
+        )
+        await db.qa_questions.create_index(
+            ["created_at"],
+            expireAfterSeconds=7776000,  # 90 days TTL
+            background=True
+        )
+        logger.info("Q&A questions indexes created")
+
+        # Q&A answers indexes
+        await db.qa_answers.create_index(
+            [("question_id", 1), ("created_at", -1)],
+            background=True
+        )
+        await db.qa_answers.create_index(
+            [("author_id", 1), ("created_at", -1)],
+            background=True
+        )
+        logger.info("Q&A answers indexes created")
+
+        # Q&A comments indexes
+        await db.qa_comments.create_index(
+            [("question_id", 1), ("created_at", -1)],
+            background=True
+        )
+        await db.qa_comments.create_index(
+            [("author_id", 1), ("created_at", -1)],
+            background=True
+        )
+        await db.qa_comments.create_index(
+            [("parent_id", 1)],
+            background=True
+        )
+        logger.info("Q&A comments indexes created")
+
+        # Study rooms indexes
+        await db.study_rooms.create_index(
+            [("host_id", 1), ("status", 1)],
+            background=True
+        )
+        await db.study_rooms.create_index(
+            [("status", 1), ("created_at", -1)],
+            background=True
+        )
+        logger.info("Study rooms indexes created")
+
+        # Study room messages indexes
+        await db.study_room_messages.create_index(
+            [("room_id", 1), ("created_at", -1)],
+            background=True
+        )
+        await db.study_room_messages.create_index(
+            [("room_id", 1), ("is_read", 1)],
+            background=True
+        )
+        await db.study_room_messages.create_index(
+            "created_at",
+            expireAfterSeconds=7776000,  # 90 days TTL for messages
+            background=True
+        )
+        logger.info("Study room messages indexes created")
+
+        # Q&A posts indexes
+        await db.qa_posts.create_index(
+            [("subject", 1), ("created_at", -1)],
+            background=True
+        )
+        await db.qa_posts.create_index(
+            [("user_id", 1), ("created_at", -1)],
+            background=True
+        )
+        await db.qa_posts.create_index(
+            [("question_type", 1), ("created_at", -1)],
+            background=True
+        )
+        await db.qa_posts.create_index(
+            [("tags", 1)],
+            background=True
+        )
+        logger.info("Q&A posts indexes created")
+
+        # Ensure OTP TTL index (already created but re-verify)
+        await db.otps.create_index(
+            "expires_at",
+            expireAfterSeconds=0,
+            background=True
+        )
+        logger.info("OTPs TTL index verified")
+
+        # Revoked tokens collection (for refresh token rotation)
+        await db.revoked_tokens.create_index("expires_at", expireAfterSeconds=0, background=True)
+        await db.revoked_tokens.create_index("family", background=True)  # For revoking entire token families
+        await db.revoked_tokens.create_index([("user_id", 1), ("family", 1)], background=True)  # Compound index
+        logger.info("Revoked tokens collection indexes created")
+
         logger.info("All database indexes created successfully")
 
     except Exception as e:
@@ -289,6 +493,12 @@ async def get_rate_limits_collection():
     """Get rate limits collection."""
     db = await get_database()
     return db.rate_limits
+
+
+async def get_revoked_tokens_collection():
+    """Get revoked tokens collection."""
+    db = await get_database()
+    return db.revoked_tokens
 
 
 async def get_conversation_sessions_collection():
@@ -343,3 +553,45 @@ async def get_proactive_email_logs_collection():
     """Get proactive email logs collection."""
     db = await get_database()
     return db.proactive_email_logs
+
+
+async def get_study_buddy_conversations_collection():
+    """Get study buddy conversations collection."""
+    db = await get_database()
+    return db.study_buddy_conversations
+
+
+async def get_study_buddy_messages_collection():
+    """Get study buddy messages collection."""
+    db = await get_database()
+    return db.study_buddy_messages
+
+
+async def get_qa_questions_collection():
+    """Get Q&A questions collection."""
+    db = await get_database()
+    return db.qa_questions
+
+
+async def get_qa_answers_collection():
+    """Get Q&A answers collection."""
+    db = await get_database()
+    return db.qa_answers
+
+
+async def get_qa_comments_collection():
+    """Get Q&A comments collection."""
+    db = await get_database()
+    return db.qa_comments
+
+
+async def get_study_rooms_collection():
+    """Get study rooms collection."""
+    db = await get_database()
+    return db.study_rooms
+
+
+async def get_study_room_messages_collection():
+    """Get study room messages collection."""
+    db = await get_database()
+    return db.study_room_messages

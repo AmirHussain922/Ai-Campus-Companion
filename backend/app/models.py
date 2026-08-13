@@ -257,6 +257,7 @@ class TokenData(BaseModel):
     email: str
     role: UserRole = UserRole.USER
     jti: str  # JWT ID for token revocation
+    family: str  # Token family for rotation/revocation
     exp: datetime
     iat: datetime
     type: TokenType = TokenType.ACCESS
@@ -685,10 +686,9 @@ class ProactiveHistoryResponse(BaseModel):
 
 class QuestType(str, Enum):
     """Types of quests."""
-    STUDY = "study"
-    SOCIAL = "social"
-    WELLNESS = "wellness"
-    RIVALRY = "rivalry"
+    COMPANION_CHAT = "companion_chat"
+    LOUNGE_ACTIVITY = "lounge_activity"
+    STUDY_ROOM = "study_room"
 
 
 class QuestStatus(str, Enum):
@@ -732,6 +732,7 @@ class UserQuestInDB(BaseDBModel):
     target_count: Optional[int] = None
     trigger_event: Optional[str] = None
     progress_count: int = 0
+    retry_count: int = 0
     status: QuestStatus = QuestStatus.ACTIVE
     started_at: datetime = Field(default_factory=datetime.utcnow)
     completed_at: Optional[datetime] = None
@@ -758,12 +759,18 @@ class UserQuestResponse(BaseModel):
     target_count: Optional[int] = None
     trigger_event: Optional[str] = None
     progress_count: int = 0
+    retry_count: int = 0
     status: QuestStatus
     started_at: datetime
     completed_at: Optional[datetime] = None
     user_report_text: Optional[str] = None
 
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_encoders={
+            datetime: lambda v: v.isoformat(),
+        }
+    )
 
 
 class QuestCompletionRequest(BaseModel):
@@ -785,75 +792,6 @@ class QuestHistoryResponse(BaseModel):
     active: list[UserQuestResponse]
     completed: list[UserQuestResponse]
     failed: list[UserQuestResponse]
-
-
-# ============================================================================
-# Campus Lounge / Group Chat Models
-# ============================================================================
-
-class GroupMessageSenderType(str, Enum):
-    """Type of message sender in group chat."""
-    USER = "user"
-    COMPANION = "companion"
-
-
-class GroupMessageInDB(BaseDBModel):
-    """Group chat message stored in database."""
-    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
-    sender_type: GroupMessageSenderType
-    sender_id: str  # user_id or companion_id (e.g., "oliver", "chloe")
-    sender_name: str  # Display name
-    content: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    reply_to: Optional[str] = None  # ID of message this is replying to
-
-    model_config = ConfigDict(
-        populate_by_name=True,
-        json_encoders={ObjectId: str, datetime: lambda v: v.isoformat()},
-    )
-
-
-class GroupMessageResponse(BaseModel):
-    """Response model for group chat message."""
-    id: str = Field(alias="_id")
-    sender_type: GroupMessageSenderType
-    sender_id: str
-    sender_name: str
-    content: str
-    timestamp: datetime
-    reply_to: Optional[str] = None
-    sender_color: Optional[str] = None
-    sender_avatar: Optional[str] = None
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class GroupChatHistoryResponse(BaseModel):
-    """Response model for group chat history."""
-    messages: list[GroupMessageResponse]
-    participants: list[dict]  # List of {id, name, color, avatar}
-    total: int
-
-
-class GroupChatSendRequest(BaseModel):
-    """Request to send a message to group chat."""
-    content: str = Field(..., min_length=1, max_length=1000)
-    reply_to: Optional[str] = None
-
-
-class GroupChatSendResponse(BaseModel):
-    """Response after sending a group chat message."""
-    user_message: GroupMessageResponse
-    companion_replies: list[GroupMessageResponse]
-
-
-class CompanionPersonalityConfig(BaseModel):
-    """Configuration for companion personality in group chat."""
-    companion_id: str
-    name: str
-    personality: str
-    speech_patterns: str
-    opinions: dict[str, str]  # Map of other companion IDs to opinions
 
 
 # ============================================================================
@@ -953,3 +891,526 @@ class StudyLeaderboardResponse(BaseModel):
     entries: list[StudyLeaderboardEntry]
     user_rank: Optional[int] = None
     user_total_minutes: Optional[int] = None
+
+
+# ============================================================================
+# Study Buddy Models
+# ============================================================================
+
+class StudyBuddyProfileCreate(BaseModel):
+    """Request to create/update study buddy profile."""
+    country: str = Field(..., min_length=2, max_length=100)
+    city: str = Field(..., min_length=2, max_length=100)
+    campus_university: str = Field(..., min_length=2, max_length=200)
+    major: str = Field(..., min_length=2, max_length=100)
+    academic_year: str = Field(..., min_length=1, max_length=50)
+    strong_subjects: list[str] = Field(default_factory=list)
+    weak_subjects: list[str] = Field(default_factory=list)
+    bio: Optional[str] = Field(None, max_length=1000)
+    avatar_id: Optional[str] = Field(None, max_length=100)
+
+
+class StudyBuddyProfileUpdate(BaseModel):
+    """Request to update study buddy profile."""
+    country: Optional[str] = Field(None, max_length=100)
+    city: Optional[str] = Field(None, max_length=100)
+    campus_university: Optional[str] = Field(None, min_length=2, max_length=200)
+    major: Optional[str] = Field(None, min_length=2, max_length=100)
+    academic_year: Optional[str] = Field(None, min_length=1, max_length=50)
+    strong_subjects: Optional[list[str]] = Field(default_factory=list)
+    weak_subjects: Optional[list[str]] = Field(default_factory=list)
+    bio: Optional[str] = Field(None, max_length=1000)
+    avatar_id: Optional[str] = Field(None, max_length=100)
+
+    @field_validator("country", "city", mode="after")
+    @classmethod
+    def validate_min_length_if_not_empty(cls, v: Optional[str]) -> Optional[str]:
+        """Validate that if a value is provided and not empty, it meets min length."""
+        if v is not None and v != "" and len(v) < 2:
+            raise ValueError("Must be at least 2 characters if provided")
+        return v
+
+
+class StudyBuddyProfileInDB(BaseDBModel, TimestampMixin):
+    """Study buddy profile as stored in database."""
+    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    user_id: str
+    country: str
+    city: str
+    campus_university: str
+    major: str
+    academic_year: str
+    strong_subjects: list[str] = Field(default_factory=list)
+    weak_subjects: list[str] = Field(default_factory=list)
+    bio: Optional[str] = None
+    avatar_id: Optional[str] = None
+    is_online: bool = False
+    last_active: Optional[datetime] = None
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_encoders={ObjectId: str, datetime: lambda v: v.isoformat()},
+    )
+
+
+class StudyBuddyProfileResponse(BaseModel):
+    """Response model for study buddy profile."""
+    id: str = Field(alias="_id")
+    user_id: str
+    country: str
+    city: str
+    campus_university: str
+    major: str
+    academic_year: str
+    strong_subjects: list[str]
+    weak_subjects: list[str]
+    bio: Optional[str]
+    avatar_id: Optional[str]
+    is_online: bool
+    last_active: Optional[datetime]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class MatchReason(str, Enum):
+    """Reasons for matching users."""
+    STRONG_WEAK = "strong_weak"
+    SAME_CAMPUS = "same_campus"
+    SAME_MAJOR = "same_major"
+    SAME_YEAR = "same_year"
+    SAME_LOCATION = "same_location"
+    RELATED_SUBJECTS = "related_subjects"
+
+
+class MatchReasonResponse(BaseModel):
+    """Match reason response."""
+    reason: MatchReason
+    description: str
+
+
+class StudyBuddyMatchRequest(BaseModel):
+    """Request for matching study buddies."""
+    user_id: Optional[str] = None
+
+
+class StudyBuddyMatchResult(BaseModel):
+    """Match result for a study buddy."""
+    user_id: str
+    full_name: str
+    email: str
+    avatar_url: Optional[str] = None
+    compatibility_score: int  # 0-100
+    match_reasons: list[MatchReasonResponse]
+    strong_subjects_overlap: list[str]
+    weak_subjects_help: list[str]
+
+
+class StudyBuddyMatchResponse(BaseModel):
+    """Complete match response."""
+    matches: list[StudyBuddyMatchResult]
+    total_matches: int
+
+
+class ConnectionRequestStatus(str, Enum):
+    """Status of a connection request."""
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+
+
+class ConnectionRequestInDB(BaseDBModel, TimestampMixin):
+    """Connection request as stored in database."""
+    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    sender_id: str
+    recipient_id: str
+    status: ConnectionRequestStatus = ConnectionRequestStatus.PENDING
+    message: Optional[str] = None
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_encoders={ObjectId: str, datetime: lambda v: v.isoformat()},
+    )
+
+
+class ConnectionRequestCreate(BaseModel):
+    """Request to create connection request."""
+    recipient_id: str
+    message: Optional[str] = Field(None, max_length=500)
+
+
+class ConnectionRequestResponse(BaseModel):
+    """Response model for connection request."""
+    id: str = Field(alias="_id")
+    sender_id: str
+    recipient_id: str
+    status: ConnectionRequestStatus
+    message: Optional[str]
+    sender_full_name: str
+    sender_avatar_url: Optional[str] = None
+    created_at: datetime
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ConnectionResponse(BaseModel):
+    """Response for user's connections."""
+    id: str = Field(alias="_id")
+    user_id: str
+    full_name: str
+    avatar_url: Optional[str] = None
+    country: str
+    city: str
+    campus_university: str
+    major: str
+    academic_year: str
+    is_online: bool
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+# ============================================================================
+# Peer Q&A Models
+# ============================================================================
+
+class QuestionInDB(BaseDBModel, TimestampMixin):
+    """Question as stored in database."""
+    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    author_id: str
+    content: str
+    subject: str  # e.g., "Programming", "Mathematics", "Physics"
+    images: list[str] = Field(default_factory=list)  # Array of image URLs
+    answers_count: int = 0
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_encoders={ObjectId: str, datetime: lambda v: v.isoformat()},
+    )
+
+
+class QuestionCreate(BaseModel):
+    """Request to create a question."""
+    content: str
+    subject: str = Field(..., max_length=100)
+    images: list[str] = Field(default_factory=list)
+
+
+class QuestionResponse(BaseModel):
+    """Response model for a question."""
+    id: str = Field(alias="_id")
+    author_id: str
+    author_full_name: str
+    content: str
+    subject: str
+    images: list[str]
+    answers_count: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class QuestionUpdate(BaseModel):
+    """Request to update a question."""
+    content: Optional[str] = None
+    subject: Optional[str] = None
+    images: Optional[list[str]] = None
+
+
+class AnswerInDB(BaseDBModel, TimestampMixin):
+    """Answer as stored in database."""
+    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    question_id: str
+    author_id: str
+    content: str
+    images: list[str] = Field(default_factory=list)
+    links: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_encoders={ObjectId: str, datetime: lambda v: v.isoformat()},
+    )
+
+
+class AnswerCreate(BaseModel):
+    """Request to create an answer."""
+    question_id: str
+    content: str
+    images: list[str] = Field(default_factory=list)
+    links: list[str] = Field(default_factory=list)
+
+
+class AnswerResponse(BaseModel):
+    """Response model for an answer."""
+    id: str = Field(alias="_id")
+    question_id: str
+    author_id: str
+    author_full_name: str
+    content: str
+    images: list[str]
+    links: list[str]
+    created_at: datetime
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class AnswerUpdate(BaseModel):
+    """Request to update an answer."""
+    content: Optional[str] = None
+    images: Optional[list[str]] = None
+    links: Optional[list[str]] = None
+
+
+class CommentInDB(BaseDBModel, TimestampMixin):
+    """Comment as stored in database."""
+    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    question_id: str
+    author_id: str
+    content: str
+    parent_id: Optional[str] = None  # For threaded replies
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_encoders={ObjectId: str, datetime: lambda v: v.isoformat()},
+    )
+
+
+class CommentCreate(BaseModel):
+    """Request to create a comment."""
+    question_id: str
+    content: str
+    parent_id: Optional[str] = None
+
+
+class CommentResponse(BaseModel):
+    """Response model for a comment."""
+    id: str = Field(alias="_id")
+    question_id: str
+    author_id: str
+    author_full_name: str
+    content: str
+    parent_id: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class CommentUpdate(BaseModel):
+    """Request to update a comment."""
+    content: str
+
+
+# ============================================================================
+# Study Room Models
+# ============================================================================
+
+class StudyRoomStatus(str, Enum):
+    """Status of a study room."""
+    ACTIVE = "active"
+    ENDED = "ended"
+
+
+class StudyRoomInDB(BaseDBModel, TimestampMixin):
+    """Study Room as stored in database."""
+    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    host_id: str
+    major: str
+    subject: str
+    title: str
+    description: Optional[str] = None
+    status: StudyRoomStatus = StudyRoomStatus.ACTIVE
+    participant_ids: list[str] = Field(default_factory=list)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_encoders={ObjectId: str, datetime: lambda v: v.isoformat()},
+    )
+
+
+class StudyRoomCreate(BaseModel):
+    """Request to create a study room."""
+    major: str = Field(..., max_length=100)
+    subject: str = Field(..., max_length=100)
+    title: str = Field(..., max_length=200)
+    description: Optional[str] = Field(None, max_length=1000)
+
+
+class StudyRoomResponse(BaseModel):
+    """Response model for a study room."""
+    id: str = Field(alias="_id")
+    host_id: str
+    host_full_name: str
+    major: str
+    subject: str
+    title: str
+    description: Optional[str]
+    status: StudyRoomStatus
+    participant_ids: list[str]
+    participant_count: int
+    max_participants: int = 5
+    created_at: datetime
+    started_at: Optional[datetime]
+    ended_at: Optional[datetime]
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class StudyRoomUpdate(BaseModel):
+    """Request to update a study room."""
+    title: Optional[str] = None
+    description: Optional[str] = None
+    subject: Optional[str] = None
+
+
+class StudyRoomJoinRequest(BaseModel):
+    """Request to join a study room."""
+    room_id: str
+
+
+class StudyRoomParticipant(BaseModel):
+    """Response for a study room participant."""
+    id: str = Field(alias="_id")
+    user_id: str
+    full_name: str
+    joined_at: datetime
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+# ============================================================================
+# Study Buddy Messaging Models
+# ============================================================================
+
+class MessageType(str, Enum):
+    """Types of messages."""
+    TEXT = "text"
+
+
+class ConversationInDB(BaseDBModel, TimestampMixin):
+    """Conversation as stored in database (one-to-one between two users)."""
+    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    user_a_id: str
+    user_b_id: str
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_encoders={ObjectId: str, datetime: lambda v: v.isoformat()},
+    )
+
+
+class ConversationCreate(BaseModel):
+    """Request to create conversation (if doesn't exist)."""
+    user_id: Optional[str] = None  # Ignored; user_id always comes from the authenticated JWT token
+    other_user_id: str  # The other user in the conversation
+
+
+class ConversationResponse(BaseModel):
+    """Response model for conversation."""
+    id: str = Field(alias="_id")
+    user_a_id: str
+    user_b_id: str
+    created_at: datetime
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class MessageInDB(BaseDBModel, TimestampMixin):
+    """Message as stored in database."""
+    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    conversation_id: str
+    sender_id: str
+    content: str
+    message_type: MessageType = MessageType.TEXT
+    is_read: bool = False
+    read_at: Optional[datetime] = None
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_encoders={ObjectId: str, datetime: lambda v: v.isoformat()},
+    )
+
+
+class MessageCreate(BaseModel):
+    """Request to create message."""
+    conversation_id: str
+    content: str
+
+
+class MessageResponse(BaseModel):
+    """Response model for message."""
+    id: str = Field(alias="_id")
+    conversation_id: str
+    sender_id: str
+    content: str
+    message_type: MessageType
+    is_read: bool
+    read_at: Optional[datetime]
+    created_at: datetime
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_encoders={ObjectId: str, datetime: lambda v: v.isoformat()}
+    )
+
+
+class MessageListResponse(BaseModel):
+    """Paginated response for messages."""
+    messages: list[MessageResponse]
+    meta: PaginationMeta
+
+
+class ConversationMessageResponse(BaseModel):
+    """Response with conversation and messages."""
+    conversation: ConversationResponse
+    messages: list[MessageResponse]
+    meta: PaginationMeta
+
+
+# ============================================================================
+# Study Room Messaging Models
+# ============================================================================
+
+class RoomMessageInDB(BaseDBModel, TimestampMixin):
+    """Room message as stored in database."""
+    id: PyObjectId = Field(default_factory=PyObjectId, alias="_id")
+    room_id: str
+    sender_id: str
+    content: str
+    message_type: MessageType = MessageType.TEXT
+    is_read: bool = False
+    read_at: Optional[datetime] = None
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        json_encoders={ObjectId: str, datetime: lambda v: v.isoformat()},
+    )
+
+
+class RoomMessageCreate(BaseModel):
+    """Request to create room message."""
+    content: str
+
+
+class RoomMessageResponse(BaseModel):
+    """Response model for room message."""
+    id: str = Field(alias="_id")
+    room_id: str
+    sender_id: str
+    content: str
+    message_type: MessageType
+    is_read: bool
+    read_at: Optional[datetime]
+    created_at: datetime
+
+    model_config = ConfigDict(populate_by_name=True)

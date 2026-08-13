@@ -9,15 +9,33 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Optional
 
+from cachetools import TTLCache
 from fastapi import HTTPException, Request, status
 
 from app.core.database import get_database
+from app.core.utils import is_database_available, set_database_available
 
 logger = logging.getLogger(__name__)
+
+
+# Set of sensitive endpoints that should fail closed when rate limiter is unavailable
+SENSITIVE_ENDPOINTS = {
+    "/auth/login",
+    "/auth/register",
+    "/auth/refresh",
+    "/auth/reset-password",
+}
+
+# Flag to track database availability
+_database_available: bool = True
+
+
+# In-memory cache for rate limiting in emergency mode (only when database is unavailable)
+_fallback_cache = TTLCache(maxsize=10000, ttl=300)
 
 
 class RateLimitAction(str, Enum):
@@ -42,9 +60,9 @@ class RateLimitConfig:
 # Default rate limit configurations
 DEFAULT_RATE_LIMITS: dict[RateLimitAction, RateLimitConfig] = {
     RateLimitAction.LOGIN: RateLimitConfig(
-        max_requests=5,
-        window_seconds=900,  # 15 minutes
-        block_duration_seconds=1800  # 30 minutes
+        max_requests=10,
+        window_seconds=120,  # 2 minutes
+        block_duration_seconds=120  # 2 minutes reset
     ),
     RateLimitAction.REGISTER: RateLimitConfig(
         max_requests=3,
@@ -127,32 +145,61 @@ class RateLimiter:
         config = self._rate_limits.get(action, self._rate_limits[RateLimitAction.GENERAL])
         key = self._get_limit_key(identifier, action)
 
+        # First, try database-based rate limiting
         try:
             db = await get_database()
-        except Exception as e:
-            # If database is not available, allow the request (fail open)
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"Rate limiter: Database not available, allowing request: {e}")
-            return True, {
-                "limit": config.max_requests,
-                "remaining": config.max_requests - 1,
-                "reset_timestamp": 0,
-                "blocked": False
-            }
-        
+        except Exception:
+            db = None
+
+        # If database is not available, use fallback cache
         if db is None:
-            # Database connection failed
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning("Rate limiter: Database is None, allowing request")
+            # Emergency mode: use in-memory cache
+            now = datetime.now(timezone.utc)
+            
+            # Check if currently blocked in cache
+            block_key = f"block:{key}"
+            if block_key in _fallback_cache:
+                reset_time = _fallback_cache[block_key]
+                return False, {
+                    "limit": config.max_requests,
+                    "remaining": 0,
+                    "reset_timestamp": int(reset_time.timestamp()),
+                    "blocked": True,
+                    "emergency_mode": True
+                }
+
+            # Get current count from cache
+            current_count = _fallback_cache.get(key, 0)
+
+            # If limit exceeded, block the request
+            if current_count >= config.max_requests:
+                block_duration = config.block_duration_seconds or config.window_seconds
+                block_until = now + timedelta(seconds=block_duration)
+                _fallback_cache[block_key] = block_until
+
+                logger.critical(f"Rate limiter in emergency mode: blocked {key} for identifier {identifier}")
+                return False, {
+                    "limit": config.max_requests,
+                    "remaining": 0,
+                    "reset_timestamp": int(block_until.timestamp()),
+                    "blocked": True,
+                    "emergency_mode": True
+                }
+
+            # Increment count in cache
+            _fallback_cache[key] = current_count + 1
+            
+            reset_time = now + timedelta(seconds=config.window_seconds)
             return True, {
                 "limit": config.max_requests,
-                "remaining": config.max_requests - 1,
-                "reset_timestamp": 0,
-                "blocked": False
+                "remaining": config.max_requests - current_count - 1,
+                "reset_timestamp": int(reset_time.timestamp()),
+                "blocked": False,
+                "emergency_mode": True
             }
-        now = datetime.utcnow()
+
+        # Database-based rate limiting (normal case)
+        now = datetime.now(timezone.utc)
         window_start = now - timedelta(seconds=config.window_seconds)
 
         # Check if currently blocked
@@ -164,6 +211,9 @@ class RateLimiter:
 
         if block_record:
             reset_time = block_record["expires_at"]
+            # Ensure reset_time is timezone-aware
+            if reset_time.tzinfo is None:
+                reset_time = reset_time.replace(tzinfo=timezone.utc)
             return False, {
                 "limit": config.max_requests,
                 "remaining": 0,
@@ -176,37 +226,43 @@ class RateLimiter:
 
         if not rate_limit:
             # First request
+            expires_at = now + timedelta(seconds=config.window_seconds)
             await db.rate_limits.insert_one({
                 "key": key,
                 "count": 1,
                 "window_start": now,
-                "expires_at": now + timedelta(seconds=config.window_seconds)
+                "expires_at": expires_at
             })
             return True, {
                 "limit": config.max_requests,
                 "remaining": config.max_requests - 1,
-                "reset_timestamp": int((now + timedelta(seconds=config.window_seconds)).timestamp()),
+                "reset_timestamp": int(expires_at.timestamp()),
                 "blocked": False
             }
 
         # Check if window has expired
         window_start_time = rate_limit.get("window_start", now)
+        # Ensure window_start_time is timezone-aware
+        if window_start_time.tzinfo is None:
+            window_start_time = window_start_time.replace(tzinfo=timezone.utc)
+            
         if window_start_time < window_start:
             # Reset window
+            expires_at = now + timedelta(seconds=config.window_seconds)
             await db.rate_limits.update_one(
                 {"key": key},
                 {
                     "$set": {
                         "count": 1,
                         "window_start": now,
-                        "expires_at": now + timedelta(seconds=config.window_seconds)
+                        "expires_at": expires_at
                     }
                 }
             )
             return True, {
                 "limit": config.max_requests,
                 "remaining": config.max_requests - 1,
-                "reset_timestamp": int((now + timedelta(seconds=config.window_seconds)).timestamp()),
+                "reset_timestamp": int(expires_at.timestamp()),
                 "blocked": False
             }
 
@@ -214,6 +270,10 @@ class RateLimiter:
         current_count = rate_limit.get("count", 0)
         if current_count >= config.max_requests:
             # Block the identifier
+            expires_at = rate_limit.get("expires_at", now + timedelta(seconds=config.window_seconds))
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+                
             if config.block_duration_seconds:
                 block_until = now + timedelta(seconds=config.block_duration_seconds)
                 await db.rate_limits.insert_one({
@@ -222,11 +282,12 @@ class RateLimiter:
                     "window_start": now,
                     "expires_at": block_until
                 })
+                expires_at = block_until
 
             return False, {
                 "limit": config.max_requests,
                 "remaining": 0,
-                "reset_timestamp": int(rate_limit["expires_at"].timestamp()),
+                "reset_timestamp": int(expires_at.timestamp()),
                 "blocked": True
             }
 
@@ -239,11 +300,15 @@ class RateLimiter:
             }
         )
 
+        expires_at = rate_limit.get("expires_at", now + timedelta(seconds=config.window_seconds))
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+            
         remaining = config.max_requests - current_count - 1
         return True, {
             "limit": config.max_requests,
             "remaining": max(0, remaining),
-            "reset_timestamp": int(rate_limit["expires_at"].timestamp()),
+            "reset_timestamp": int(expires_at.timestamp()),
             "blocked": False
         }
 

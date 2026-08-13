@@ -7,12 +7,91 @@ import { useShallow } from 'zustand/react/shallow';
 import { companionColorClasses, cn, getPersonalizedEpisodeDetails } from "../utils";
 import { episodeDetails } from "../storyData";
 import { useProactiveMessages } from "../hooks/useProactiveMessages";
+import { MangaBubble, ComicSFX, CharacterExpression, useCharacterExpression } from '../components/manga';
+import '../components/manga/manga-theme.css';
 
 // Constants
-const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL ?? 'http://localhost:8000';
+const API_BASE_URL = ((import.meta as any).env?.VITE_API_BASE_URL ?? 'http://localhost:8000') + '/api';
 const LEVEL_UP_DURATION_MS = 4000;
 
 import { useEpisodeStore } from '../useEpisodeStore';
+
+// Emotion detection helper
+function detectEmotion(text: string): 'happy' | 'angry' | 'worried' | 'shock' | 'embarrassed' | 'sad' | 'excited' {
+  const lowerText = text.toLowerCase();
+
+  // Priority order: most specific emotions first
+  if (
+    lowerText.includes('blush') ||
+    lowerText.includes('embarrassed') ||
+    lowerText.includes('awkward')
+  ) {
+    return 'embarrassed';
+  }
+
+  if (
+    lowerText.includes('angry') ||
+    lowerText.includes('mad') ||
+    lowerText.includes('frustrated') ||
+    lowerText.includes('annoyed') ||
+    lowerText.includes('hate') ||
+    lowerText.includes('stupid')
+  ) {
+    return 'angry';
+  }
+
+  if (
+    lowerText.includes('worried') ||
+    lowerText.includes('nervous') ||
+    lowerText.includes('scared') ||
+    lowerText.includes('sorry') ||
+    lowerText.includes('anxious')
+  ) {
+    return 'worried';
+  }
+
+  if (
+    lowerText.includes('surprised') ||
+    lowerText.includes('shock') ||
+    lowerText.includes('what') ||
+    lowerText.includes('huh') ||
+    lowerText.includes('oh')
+  ) {
+    return 'shock';
+  }
+
+  if (
+    lowerText.includes('sad') ||
+    lowerText.includes('upset') ||
+    lowerText.includes('disappointed') ||
+    lowerText.includes('miss') ||
+    lowerText.includes('cry') ||
+    lowerText.includes('bad')
+  ) {
+    return 'sad';
+  }
+
+  // General emotions (checked last for priority)
+  if (
+    lowerText.includes('!') ||
+    lowerText.includes('wow') ||
+    lowerText.includes('amazing') ||
+    lowerText.includes('great') ||
+    lowerText.includes('awesome') ||
+    lowerText.includes('love') ||
+    lowerText.includes('happy')
+  ) {
+    return 'excited';
+  }
+
+  return 'happy'; // default
+}
+
+// Random SFX for comic effect
+const sfxTypes = ['BAM', 'POW', 'ZAP', 'TING', 'WHAM', 'SWISH', 'FLASH', 'THUD'] as const;
+function getRandomSFX(): 'BAM' | 'POW' | 'ZAP' | 'TING' | 'WHAM' | 'SWISH' | 'FLASH' | 'THUD' {
+  return sfxTypes[Math.floor(Math.random() * sfxTypes.length)];
+}
 
 export default function Chat() {
   const { id: companionId } = useParams<{ id: string }>();
@@ -635,59 +714,79 @@ export default function Chat() {
                 >
                   <div className={cn("flex max-w-[80%] items-end gap-3", isUser ? "flex-row-reverse" : "flex-row")}>
                     {!isUser && (
-                      <img src={companion.avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0 mb-1" />
+                      <div className="flex flex-col items-end gap-1">
+                        <CharacterExpression
+                          emotion={detectEmotion(msg.text)}
+                          size="sm"
+                          blinkInterval={4000}
+                        />
+                        <img src={companion.avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0" />
+                      </div>
                     )}
-                    
-                    <div 
-                      className={cn(
-                        "px-5 py-3.5 rounded-2xl text-[15px] leading-relaxed relative group",
-                        isUser 
-                          ? "bg-zinc-800 text-white rounded-br-sm" 
-                          : msg.isProactive
-                            ? "bg-gradient-to-br from-slate-700/80 to-slate-800/80 text-zinc-100 rounded-bl-sm border border-slate-600/50 backdrop-blur-md"
-                            : cn(colors.bgLight, "text-zinc-100 rounded-bl-sm border border-white/5 backdrop-blur-md")
-                      )}
+
+                    <MangaBubble
+                      direction={isUser ? "right" : "left"}
+                      size="md"
+                      emotion={detectEmotion(msg.text)}
+                      tailColor={isUser ? "#8B5CF6" : colors.bg.replace('bg-', 'border-').replace('500', '400').replace('600', '500')}
                     >
-                      {/* Proactive message indicator */}
-                      {msg.isProactive && (
-                        <div className="flex items-center gap-1.5 mb-2 pb-2 border-b border-slate-600/50">
-                          <Mail className="w-3 h-3 text-slate-400" />
-                          <span className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">
-                            From {companion.name}
-                          </span>
-                        </div>
-                      )}
-                      {msg.text}
-                      {msg.sender === 'companion' && (
-                        <div className="mt-2 flex items-center justify-end gap-1 opacity-70 hover:opacity-100 transition-opacity">
-                          <button
-                            type="button"
-                            onClick={() => handleFeedback(msg.id, 1)}
-                            className={cn(
-                              "p-1 rounded-md hover:bg-white/10 transition-colors",
-                              msg.feedback === 1 ? "text-emerald-300" : "text-zinc-300"
-                            )}
-                            aria-label="Thumbs up"
-                          >
-                            <ThumbsUp className="w-4 h-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleFeedback(msg.id, -1)}
-                            className={cn(
-                              "p-1 rounded-md hover:bg-white/10 transition-colors",
-                              msg.feedback === -1 ? "text-red-300" : "text-zinc-300"
-                            )}
-                            aria-label="Thumbs down"
-                          >
-                            <ThumbsDown className="w-4 h-4" />
-                          </button>
-                        </div>
-                      )}
-                      <span className="absolute -bottom-5 text-[10px] text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                        {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                      </span>
-                    </div>
+                      <div className="relative">
+                        {/* Proactive message indicator */}
+                        {msg.isProactive && (
+                          <div className="flex items-center gap-1.5 mb-2 pb-2 border-b border-zinc-700/50">
+                            <Mail className="w-3 h-3 text-zinc-400" />
+                            <span className="text-[10px] text-zinc-400 uppercase tracking-wider font-medium">
+                              From {companion.name}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Message text */}
+                        <p className="text-[15px] leading-relaxed">{msg.text}</p>
+
+                        {/* Thumbs up/down */}
+                        {msg.sender === 'companion' && (
+                          <div className="mt-2 flex items-center justify-end gap-1 opacity-70 hover:opacity-100 transition-opacity">
+                            <button
+                              type="button"
+                              onClick={() => handleFeedback(msg.id, 1)}
+                              className={cn(
+                                "p-1 rounded-md hover:bg-white/10 transition-colors",
+                                msg.feedback === 1 ? "text-emerald-300" : "text-zinc-300"
+                              )}
+                              aria-label="Thumbs up"
+                            >
+                              <ThumbsUp className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleFeedback(msg.id, -1)}
+                              className={cn(
+                                "p-1 rounded-md hover:bg-white/10 transition-colors",
+                                msg.feedback === -1 ? "text-red-300" : "text-zinc-300"
+                              )}
+                              aria-label="Thumbs down"
+                            >
+                              <ThumbsDown className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Comic SFX overlay (random for AI messages) */}
+                        {!isUser && !msg.isProactive && Math.random() > 0.5 && (
+                          <ComicSFX
+                            type={getRandomSFX()}
+                            position="top-right"
+                            delay={0.2}
+                          />
+                        )}
+
+                        {/* Timestamp */}
+                        <span className="absolute -bottom-5 text-[10px] text-zinc-600 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                          {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        </span>
+                      </div>
+                    </MangaBubble>
                   </div>
                 </motion.div>
               );
@@ -705,7 +804,11 @@ export default function Chat() {
               className="flex w-full justify-start"
             >
               <div className="flex items-end gap-3 max-w-[80%]">
-                <img src={companion.avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover flex-shrink-0 mb-1" />
+                <CharacterExpression
+                  emotion="calm"
+                  size="sm"
+                  blinkInterval={2000}
+                />
                 <div className={cn("px-5 py-4 rounded-2xl rounded-bl-sm flex items-center gap-1.5", colors.bgLight)}>
                   <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0 }} className={cn("w-1.5 h-1.5 rounded-full", colors.bg)} />
                   <motion.div animate={{ y: [0, -4, 0] }} transition={{ repeat: Infinity, duration: 0.6, delay: 0.2 }} className={cn("w-1.5 h-1.5 rounded-full", colors.bg)} />

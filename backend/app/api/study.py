@@ -24,7 +24,7 @@ async def create_study_session(
     """Create a new study session."""
     # Track quest progress for starting a study session
     from app.services.quest_service import QuestService
-    await QuestService.track_quest_progress(str(user.id), "start_study_session")
+    await QuestService.track_study_session_start(str(user.id))
     
     session = await StudyService.create_study_session(
         user_id=str(user.id),

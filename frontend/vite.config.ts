@@ -7,7 +7,16 @@ export default defineConfig({
   plugins: [
     // The React and Tailwind plugins are both required for Make, even if
     // Tailwind is not being actively used – do not remove them
-    react(),
+    react({
+      // Enable error logging for all errors
+      errorOverlayOptions: {
+        default: {
+          closeButton: false,
+          trace: true,
+          icon: 'error'
+        }
+      }
+    }),
     tailwindcss(),
   ],
   resolve: {
@@ -19,4 +28,11 @@ export default defineConfig({
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
+
+  // Better error logging
+  server: {
+    hmr: {
+      overlay: true
+    }
+  },
 })

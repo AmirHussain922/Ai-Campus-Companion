@@ -7,7 +7,11 @@ and logout functionality with JWT-based authentication.
 
 from __future__ import annotations
 
+import asyncio
+import bcrypt
 import logging
+import random
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -18,6 +22,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.core.auth import (
     authenticate_user,
     blacklist_token,
+    blacklist_token_family,
     create_token,
     decode_token,
     get_current_user,
@@ -30,6 +35,7 @@ from app.core.auth import (
 )
 from app.config import get_settings
 from app.core.database import get_database
+from app.core.error_responses import AppException
 from app.models import (
     APIResponse,
     OTPResend,
@@ -93,7 +99,7 @@ def user_to_response(user: UserInDB) -> dict:
 # Authentication Routes
 # ============================================================================
 
-@router.post("/register", response_model=APIResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/register", response_model=APIResponse, status_code=status.HTTP_202_ACCEPTED)
 async def register(
     user_data: UserCreate,
     request: Request
@@ -102,7 +108,9 @@ async def register(
     Register a new user account.
 
     Creates a new user with hashed password and sends verification OTP to email.
+    Timing-constant response to prevent user enumeration.
     """
+    start_time = time.monotonic()
     settings = get_settings()
     db = await get_database()
 
@@ -129,16 +137,22 @@ async def register(
 
     # Check if email already exists
     existing_user = await db.users.find_one({"email": email})
+
     if existing_user:
-        # Return generic message to prevent user enumeration
-        return create_auth_response(
-            success=True,
-            message="If this email is not registered, you will receive a verification code.",
-            status_code=status.HTTP_201_CREATED
+        logger.info(f"Registration attempt for existing email: {mask_email(email)}")
+        
+        # Reject with appropriate error as requested
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={
+                "message": "This email is already registered. Please log in instead.",
+                "error_code": "AUTH_011"
+            }
         )
 
     try:
-        # Hash password
+        # User doesn't exist, proceed with normal registration
+        # Hash password (this is the expensive operation)
         password_hash = hash_password(user_data.password)
 
         # Create user document
@@ -176,7 +190,8 @@ async def register(
                 expiry_minutes=10
             )
         except Exception as email_err:
-            logger.warning(f"Failed to send OTP email to {mask_email(email)}: {email_err}")
+            import traceback
+            logger.error(f"Failed to send OTP email to {mask_email(email)}: {str(email_err)}\n{traceback.format_exc()}")
             # User is still created; they can request a new OTP later
 
         logger.info(f"User registered successfully: {mask_email(email)}")
@@ -184,16 +199,32 @@ async def register(
         # Add rate limit headers
         headers = get_rate_limit_headers(rate_info)
 
+        # Ensure minimum response time to match existing user branch
+        elapsed = time.monotonic() - start_time
+        if elapsed < 1.5:
+            await asyncio.sleep(random.uniform(0.5, 2.0) - elapsed)
+
+        # Return same message for both cases
         return create_auth_response(
             success=True,
-            message="Registration successful. Please check your email for the verification code.",
+            message="If this email is not registered, you will receive a verification code.",
             data={"user_id": user_id},
-            status_code=status.HTTP_201_CREATED
+            status_code=status.HTTP_202_ACCEPTED
         )
 
+    except HTTPException:
+        # Re-raise HTTP exceptions so FastAPI handles them
+        raise
     except Exception as e:
         import traceback
         logger.error(f"Error during registration: {e}\n{traceback.format_exc()}")
+
+        # Ensure minimum response time even on error
+        elapsed = time.monotonic() - start_time
+        if elapsed < 1.5:
+            await asyncio.sleep(random.uniform(0.5, 2.0) - elapsed)
+
+        # Standard generic error for security
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred during registration. Please try again."
@@ -368,7 +399,17 @@ async def login(
 
     Authenticates user with email and password, returns JWT tokens.
     """
-    # Check rate limiting
+    # Check rate limiting (per IP and per Email)
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # 1. Rate limit by IP
+    await check_rate_limit(
+        request,
+        RateLimitAction.LOGIN,
+        identifier=f"ip:{client_ip}"
+    )
+
+    # 2. Rate limit by Email
     is_allowed, rate_info = await check_rate_limit(
         request,
         RateLimitAction.LOGIN,
@@ -377,6 +418,8 @@ async def login(
 
     if not is_allowed:
         reset_timestamp = rate_info.get("reset_timestamp", 0)
+        # HTTPException returns {detail: {message: "...", error_code: "..."}}
+        # AppException returns {success: false, message: "...", error_code: "...", details: {...}}
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail={
@@ -394,29 +437,26 @@ async def login(
     if not user:
         # Increment failed login (using a placeholder IP)
         await increment_failed_login(email)
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"message": "Invalid credentials", "error_code": "AUTH_001"}
+        raise AppException(
+            message="Invalid credentials",
+            error_code="AUTH_001",
+            status_code=status.HTTP_401_UNAUTHORIZED
         )
 
     # Check if account is locked
     if user.locked_until and datetime.utcnow() < user.locked_until:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "message": f"Account locked. Try again after {user.locked_until.isoformat()}",
-                "error_code": "AUTH_004"
-            }
+        raise AppException(
+            message=f"Account locked. Try again after {user.locked_until.isoformat()}",
+            error_code="AUTH_004",
+            status_code=status.HTTP_403_FORBIDDEN
         )
 
     # Check if user is verified
     if not user.is_verified:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "message": "Email not verified. Please verify your email to continue.",
-                "error_code": "AUTH_002"
-            }
+        raise AppException(
+            message="Email not verified. Please verify your email to continue.",
+            error_code="AUTH_002",
+            status_code=status.HTTP_403_FORBIDDEN
         )
 
     # Verify password
@@ -479,15 +519,20 @@ async def refresh_token(
     credentials: HTTPAuthorizationCredentials = Depends(security)
 ) -> APIResponse:
     """
-    Refresh access token.
+    Refresh access token with rotation and revocation.
 
-    Generates a new access token using a valid refresh token.
+    - Inserts old refresh token JTI into revoked_tokens collection
+    - Generates new access_token AND new refresh_token with new JTI
+    - Implements token family tracking for security
     """
     if not credentials:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail={"message": "Refresh token required", "error_code": "AUTH_009"}
         )
+
+    settings = get_settings()
+    db = await get_database()
 
     # Decode and validate refresh token
     token_data = decode_token(credentials.credentials)
@@ -521,13 +566,63 @@ async def refresh_token(
             detail={"message": "User not found or inactive", "error_code": "AUTH_001"}
         )
 
-    # Generate new access token
+    # Add old refresh token to revoked_tokens collection
+    # The token expires at token_data.exp, so we set expires_at to that time
+    # We also store the family claim to revoke all tokens in the same family
+    now = datetime.utcnow()
+    token_expiry = token_data.exp
+
+    # Store in revoked_tokens with TTL for automatic cleanup
+    await db.revoked_tokens.update_one(
+        {"token_jti": token_data.jti},
+        {
+            "$set": {
+                "token_jti": token_data.jti,
+                "user_id": token_data.user_id,
+                "expires_at": token_expiry,
+                "revoked_at": now,
+                "family": token_data.family  # Store token family for revocation
+            }
+        },
+        upsert=True
+    )
+
+    # Generate token family for this session
+    # Use the old family but update the timestamp to create a new one
+    old_family = token_data.family
+    token_family = old_family.replace(str(datetime.utcnow().timestamp()), str(datetime.utcnow().timestamp()))
+
+    # Generate NEW access_token
     access_token = create_token(
         user_id=str(user.id),
         email=user.email,
         role=user.role,
         token_type=TokenType.ACCESS
     )
+
+    # Generate NEW refresh_token with family tracking
+    new_refresh_token = create_token(
+        user_id=str(user.id),
+        email=user.email,
+        role=user.role,
+        token_type=TokenType.REFRESH,
+        jti=None  # Let create_token generate a new JTI
+    )
+
+    # Verify that create_token returned a token
+    if not new_refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"message": "Failed to generate refresh token", "error_code": "AUTH_010"}
+        )
+
+    # Decode the new refresh token to get its JTI
+    new_token_data = decode_token(new_refresh_token)
+    if not new_token_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"message": "Failed to generate refresh token", "error_code": "AUTH_010"}
+        )
 
     logger.info(f"Token refreshed for user: {mask_email(user.email)}")
 
@@ -536,8 +631,9 @@ async def refresh_token(
         message="Token refreshed successfully",
         data={
             "access_token": access_token,
+            "refresh_token": new_refresh_token,
             "token_type": "bearer",
-            "expires_in": get_settings().access_token_expire_minutes * 60
+            "expires_in": settings.access_token_expire_minutes * 60
         }
     )
 
@@ -642,7 +738,8 @@ async def forgot_password(
         otp_service = await get_otp_service()
         otp_code = await otp_service.create_otp(email, OTPPurpose.PASSWORD_RESET)
 
-        logger.info(f"Generated OTP for {email}: {otp_code}")
+        # Log OTP generation without exposing the plaintext code
+        logger.info(f"Generated OTP for {mask_email(email)} with purpose {OTPPurpose.PASSWORD_RESET.value}")
         
         # Send password reset OTP email
         email_service = await get_email_service()

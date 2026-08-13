@@ -51,53 +51,6 @@ class EpisodeService:
 
         # Define episodes for each companion
         episodes_data = [
-            # Study Buddy (study_buddy)
-            {
-                "companion_id": "study_buddy",
-                "title": "Midterm Crisis",
-                "description": "Help Study Buddy prepare for a crucial midterm exam.",
-                "required_relationship_stage": 0,
-                "script_nodes": [
-                    {
-                        "node_id": "start",
-                        "companion_dialogue": "Hey! I'm so stressed about the midterm tomorrow. I've been studying for hours, but I'm still not sure about calculus.",
-                        "is_start_node": True,
-                        "choices": [
-                            {"choice_id": "c1", "choice_text": "Let's go through the key concepts together.", "next_node_id": "study", "xp_reward": 10},
-                            {"choice_id": "c2", "choice_text": "Take a break first—you need to relax!", "next_node_id": "break", "xp_reward": 5},
-                        ],
-                    },
-                    {
-                        "node_id": "study",
-                        "companion_dialogue": "That's really helpful! Let's start with derivatives. Can you explain the chain rule again?",
-                        "choices": [
-                            {"choice_id": "c3", "choice_text": "Sure! Let's break it down step by step.", "next_node_id": "success", "xp_reward": 15},
-                            {"choice_id": "c4", "choice_text": "Maybe we should look at examples instead?", "next_node_id": "examples", "xp_reward": 10},
-                        ],
-                    },
-                    {
-                        "node_id": "break",
-                        "companion_dialogue": "You're right, a break sounds good. Want to grab a coffee?",
-                        "choices": [
-                            {"choice_id": "c5", "choice_text": "Let's go! We can study more after.", "next_node_id": "study", "xp_reward": 8},
-                            {"choice_id": "c6", "choice_text": "Maybe just a short walk instead?", "next_node_id": "study", "xp_reward": 8},
-                        ],
-                    },
-                    {
-                        "node_id": "examples",
-                        "companion_dialogue": "Great idea! Examples always help me understand better.",
-                        "choices": [
-                            {"choice_id": "c7", "choice_text": "Okay, let's work through some practice problems.", "next_node_id": "success", "xp_reward": 15},
-                        ],
-                    },
-                    {
-                        "node_id": "success",
-                        "companion_dialogue": "Wow, I actually get it now! Thank you so much—you're the best study partner ever!",
-                        "is_end_node": True,
-                        "choices": [],
-                    },
-                ],
-            },
             # Life-of-the-Party (party_friend)
             {
                 "companion_id": "party_friend",

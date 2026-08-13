@@ -150,15 +150,13 @@ class StudyService:
     def _get_congratulations_message(companion_id: str, xp: int, topic: Optional[str]):
         companion = companions.get(companion_id, {})
         name = companion.get("name", "Study Buddy")
-        
-        if companion_id == "study_buddy":
-            return f"Great job! You earned {xp} XP! {f'Seems like {topic} is going well!' if topic else 'Keep going!'}"
-        elif companion_id == "rival":
+
+        if companion_id == "rival":
             return f"Not bad. You earned {xp} XP. Let's see if you can do better next time."
         elif companion_id == "party_friend":
             return f"YAYYY!!! You did it! {xp} XP! You totally deserve a break! 🎉"
         else:
-            return f"Congratulations! You earned {xp} XP."
+            return f"Great job! You earned {xp} XP! {f'Seems like {topic} is going well!' if topic else 'Keep going!'}"
 
     @staticmethod
     async def get_leaderboard(user_id: str) -> StudyLeaderboardResponse:

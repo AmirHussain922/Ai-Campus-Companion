@@ -43,13 +43,52 @@ class Settings(BaseSettings):
     # Security Settings
     # ============================================
     secret_key: str = Field(
-        default="your-secret-key-change-in-production-min-32-chars",
+        ...,
         alias="SECRET_KEY",
         min_length=32
     )
+
+    @field_validator('secret_key')
+    @classmethod
+    def validate_secret_key(cls, v: str) -> str:
+        """Validate secret key is not using a default/placeholder value."""
+        if len(v) < 32:
+            raise ValueError('SECRET_KEY must be at least 32 characters long for security')
+
+        # Check for known default/placeholder values
+        known_defaults = [
+            'your-secret-key-change-in-production-min-32-chars',
+            'change-me',
+            'your-super-secure-random-secret-key-min-32-characters-long-change-this',
+            'your-secret-key-change-in-production',
+            'test-secret-key-please-change-in-production',
+            'development-secret-key-change-this',
+        ]
+
+        v_lower = v.lower()
+        for default in known_defaults:
+            if default in v_lower:
+                raise ValueError('SECRET_KEY cannot use default/placeholder value. Please generate a secure key using: python -c "import secrets; print(secrets.token_urlsafe(32))"')
+
+        return v
+
     algorithm: str = Field(
         default="HS256",
         alias="ALGORITHM"
+    )
+    access_token_expire_minutes: int = Field(
+        default=15,
+        alias="ACCESS_TOKEN_EXPIRE_MINUTES"
+    )
+    refresh_token_expire_days: int = Field(
+        default=7,
+        alias="REFRESH_TOKEN_EXPIRE_DAYS"
+    )
+    otp_pepper: str = Field(
+        default="rrdVtjVqFT3TImlRfEYoC1l93QhxqDpGL7cPxIowuoWs5b_z_tU0w2rCIDxwW8hs",
+        alias="OTP_PEPPER",
+        min_length=32,
+        description="Secret pepper for OTP hashing (minimum 32 characters)"
     )
     access_token_expire_minutes: int = Field(
         default=15,
@@ -64,11 +103,11 @@ class Settings(BaseSettings):
     # Rate Limiting Settings
     # ============================================
     rate_limit_login_max: int = Field(
-        default=5,
+        default=10,
         alias="RATE_LIMIT_LOGIN_MAX"
     )
     rate_limit_login_window: int = Field(
-        default=900,
+        default=120,
         alias="RATE_LIMIT_LOGIN_WINDOW"
     )
     rate_limit_otp_resend_max: int = Field(
@@ -92,10 +131,14 @@ class Settings(BaseSettings):
     # CORS Settings
     # ============================================
     cors_allow_origins: list[str] = Field(
-        default=["http://localhost:3000", "http://localhost:5173"],
+        default=["http://localhost:*", "http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5179", "http://localhost:5180", "http://localhost:5181"],
         alias="CORS_ORIGINS"
     )
-    
+    cors_origins: str = Field(
+        default="http://localhost:*,http://localhost:3000,http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5179,http://localhost:5180,http://localhost:5181",
+        alias="CORS_ORIGINS_STR"
+    )
+
     @field_validator("cors_allow_origins", mode="before")
     @classmethod
     def validate_cors_origins(cls, v):
@@ -103,6 +146,26 @@ class Settings(BaseSettings):
             # Split comma-separated string
             return [item.strip() for item in v.split(",") if item.strip()]
         return v
+
+    @field_validator("cors_allow_origins")
+    @classmethod
+    def validate_cors_origins_prohibited_localhost(cls, v: list[str]) -> list[str]:
+        """Validate that localhost is not used in production."""
+        if cls.__dict__.get('_parent_class_name') == 'Settings' and v:
+            app_env = get_settings().app_env
+            if app_env != "development":
+                localhost_origins = ["localhost", "127.0.0.1", "0.0.0.0"]
+                for origin in v:
+                    origin_lower = origin.lower()
+                    for localhost in localhost_origins:
+                        if localhost in origin_lower:
+                            raise ValueError(
+                                f"Localhost origins not allowed in production CORS. "
+                                f"Found localhost in: {origin}. "
+                                f"Please configure CORS_ORIGINS to production origins."
+                            )
+        return v
+
     cors_allow_credentials: bool = Field(
         default=True,
         alias="CORS_ALLOW_CREDENTIALS"
@@ -184,9 +247,11 @@ class Settings(BaseSettings):
         alias="OPENROUTER_BASE_URL"
     )
     openrouter_model: str = Field(
-        default="openai/gpt-4o-mini",
+        default="openai/gpt-3.5-turbo",
         alias="OPENROUTER_MODEL"
     )
+
+    get_model_for_companion: callable = None
     openrouter_embedding_model: str = Field(
         default="openai/text-embedding-3-small",
         alias="OPENROUTER_EMBEDDING_MODEL"
@@ -212,7 +277,7 @@ class Settings(BaseSettings):
         alias="TRAINABLE_COMPANIONS",
     )
     demo_companions: list[str] = Field(
-        default=["study_buddy", "party_friend", "freshman"],
+        default=["party_friend", "freshman"],
         alias="DEMO_COMPANIONS",
     )
 
@@ -220,11 +285,10 @@ class Settings(BaseSettings):
     # Keys are backend personality IDs; values are OpenRouter model slugs.
     companion_models: dict[str, str] = Field(
         default={
-            "philosopher": "openai/gpt-4o-mini",
-            "rival": "openai/gpt-4o-mini",
-            "study_buddy": "openai/gpt-4o-mini",
-            "party_friend": "openai/gpt-4o-mini",
-            "freshman": "openai/gpt-4o-mini",
+            "philosopher": "nvidia/nemotron-3-ultra-550b-a55b:free",
+            "rival": "mistralai/mistral-small-3.1-24b-instruct:free",
+            "party_friend": "google/gemma-4-31b-it:free",
+            "freshman": "openai/gpt-oss-20b:free",
         },
         alias="COMPANION_MODELS",
     )
@@ -258,14 +322,6 @@ class Settings(BaseSettings):
     # ============================================
     # Validators
     # ============================================
-    @field_validator('secret_key')
-    @classmethod
-    def validate_secret_key(cls, v: str) -> str:
-        """Validate secret key length."""
-        if len(v) < 32:
-            raise ValueError('SECRET_KEY must be at least 32 characters long for security')
-        return v
-
     @field_validator('access_token_expire_minutes')
     @classmethod
     def validate_token_expiry(cls, v: int) -> int:

@@ -6,12 +6,11 @@ const API_BASE_URL = ((import.meta as any).env?.VITE_API_BASE_URL ?? 'http://loc
 
 function toBackendCompanionId(personality: string | undefined): string {
   const p = (personality ?? '').toLowerCase();
-  if (p === 'study buddy' || p === 'oliver') return 'study_buddy';
   if (p === 'life-of-the-party' || p === 'chloe') return 'party_friend';
   if (p === 'night-owl philosopher' || p === 'julian') return 'philosopher';
   if (p === 'competitive rival' || p === 'victoria') return 'rival';
   if (p === 'clueless freshman' || p === 'toby') return 'freshman';
-  return 'study_buddy';
+  return 'party_friend';
 }
 
 function authHeaders(): Record<string, string> {

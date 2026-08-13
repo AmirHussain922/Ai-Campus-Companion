@@ -13,18 +13,41 @@ export default function Login() {
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
+  // Prevent double submission
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Prevent if already loading or already submitted
+    if (loading || !email || !password) {
+      console.warn('Login prevented: form incomplete or already submitting');
+      return;
+    }
+
     setError('');
     setLoading(true);
 
-    const result = await authLogin(email, password);
-    setLoading(false);
+    console.log('Login started for:', email);
 
-    if (result.success) {
-      navigate('/select');
-    } else {
-      setError(result.message);
+    try {
+      const result = await authLogin(email, password);
+
+      console.log('Login result:', result);
+
+      if (result.success) {
+        console.log('Login successful, navigating to /select');
+        // Use a slight delay to ensure the state is fully updated
+        setTimeout(() => {
+          navigate('/select');
+        }, 100);
+      } else {
+        console.error('Login failed:', result.message);
+        setError(result.message);
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+      setError('An unexpected error occurred during login');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -106,10 +129,10 @@ export default function Login() {
           </Link>
         </div>
 
-        <button 
-          type="submit" 
-          disabled={loading}
-          className="w-full bg-white text-zinc-950 font-medium rounded-xl py-3 hover:bg-zinc-200 transition-colors mt-2 disabled:opacity-50 disabled:cursor-not-allowed"
+        <button
+          type="submit"
+          disabled={loading || !email || !password}
+          className="w-full bg-white text-zinc-950 font-medium rounded-xl py-3 hover:bg-zinc-200 transition-colors mt-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-500 disabled:shadow-none"
         >
           {loading ? 'Signing In...' : 'Sign In'}
         </button>

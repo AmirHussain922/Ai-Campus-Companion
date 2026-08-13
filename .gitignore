@@ -42,16 +42,49 @@ env/
 # Frontend
 frontend/node_modules/
 frontend/dist/
+frontend/test_messages.json
 
 # Logs
 *.log
 logs/
+backend.log
+backend_startup.log
+backend_debug.log
+backend_new.log
+uvicorn.log
+uvicorn_debug.log
+qa_backend.log
+realtime_test.log
+capacity_test.log
+host_test.log
+frontend_start.log
 
 # Testing
 .pytest_cache/
 .coverage
 htmlcov/
+coverage.xml
+
+# MongoDB test database
+test_aicampus/
+*.mongodb
+
+# Test files (keep locally but don't commit)
+test_*.py
+*_test.py
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+reproduce_*.py
+debug_*.py
 
 # Misc
 .DS_Store
 Thumbs.db
+
+# Claude
+.claude/
+
+# Continue
+.continue/

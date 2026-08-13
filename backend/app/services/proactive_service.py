@@ -163,6 +163,10 @@ class ProactiveService:
         if not last_interaction:
             return
 
+        # Ensure both datetimes are timezone-aware
+        if last_interaction.tzinfo is None:
+            last_interaction = last_interaction.replace(tzinfo=timezone.utc)
+
         # Check if 48+ hours have passed
         hours_since_last = (now - last_interaction).total_seconds() / 3600
         if hours_since_last < 48:
@@ -203,6 +207,10 @@ class ProactiveService:
         last_level_up = progression.get("last_level_up_at")
         if not last_level_up:
             return
+
+        # Ensure datetime is timezone-aware
+        if last_level_up.tzinfo is None:
+            last_level_up = last_level_up.replace(tzinfo=timezone.utc)
 
         hours_since_level_up = (now - last_level_up).total_seconds() / 3600
         if hours_since_level_up > 6:
@@ -253,6 +261,10 @@ class ProactiveService:
         last_choice_at = progress.get("last_choice_at")
         if not last_choice_at:
             return
+
+        # Ensure datetime is timezone-aware
+        if last_choice_at.tzinfo is None:
+            last_choice_at = last_choice_at.replace(tzinfo=timezone.utc)
 
         hours_since_choice = (now - last_choice_at).total_seconds() / 3600
         if hours_since_choice < 24:

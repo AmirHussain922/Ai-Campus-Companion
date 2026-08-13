@@ -1,0 +1,201 @@
+/* Manga-style Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Bangers&family=Comic+Neue:wght@400;700&family=Noto+Sans+JP:wght@400;700&display=swap');
+
+:root {
+  --manga-font: 'Noto Sans JP', 'Comic Neue', 'Arial', sans-serif;
+  --manga-font-bold: 'Noto Sans JP', 'Comic Neue', 'Arial Black', sans-serif;
+  --manga-font-handwritten: 'Comic Neue', 'Marker Felt', 'Comic Sans MS', cursive;
+  --manga-font-katakana: 'Noto Sans JP', sans-serif;
+}
+
+/* Manga-style utility classes */
+.manga-text {
+  font-family: var(--manga-font);
+  line-height: 1.6;
+}
+
+.manga-text-bold {
+  font-family: var(--manga-font-bold);
+  font-weight: 700;
+}
+
+.manga-text-handwritten {
+  font-family: var(--manga-font-handwritten);
+}
+
+.manga-text-katakana {
+  font-family: var(--manga-font-katakana);
+  font-weight: 700;
+}
+
+/* Text effects */
+.manga-text-shadow {
+  text-shadow: 3px 3px 0px rgba(0, 0, 0, 0.3);
+}
+
+.manga-text-outline {
+  -webkit-text-stroke: 2px rgba(0, 0, 0, 0.5);
+  color: transparent;
+}
+
+/* Panel styling */
+.manga-panel {
+  border: 3px solid #1a1a1a;
+  box-shadow:
+    0 0 0 2px white,
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.manga-panel-inset {
+  background-image: linear-gradient(45deg, transparent 25%, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.03) 50%, transparent 50%, transparent 75%, rgba(255,255,255,0.03) 75%);
+  background-size: 20px 20px;
+}
+
+/* Sound effect styling */
+.manga-sfx {
+  font-family: 'Bangers', 'Impact', 'Arial Black', sans-serif;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-style: italic;
+}
+
+/* Word bubble styles */
+.manga-bubble {
+  border: 3px solid #1a1a1a;
+  border-radius: 0;
+  background: white;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  position: relative;
+}
+
+.manga-bubble-corner {
+  border-radius: 0;
+}
+
+.manga-bubble-rounded {
+  border-radius: 20px;
+}
+
+/* Bleed marks (comic book trim marks) */
+.bleed-mark {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid currentColor;
+  border-left: 2px solid currentColor;
+  border-radius: 2px 0 0 0;
+}
+
+.bleed-mark.top-left {
+  top: -2px;
+  left: -2px;
+  border-bottom: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  border-radius: 0;
+}
+
+/* Dashed panel lines */
+.manga-panel-dashed {
+  border-style: dashed;
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+/* Crosshatch pattern */
+.crosshatch {
+  background-image:
+    linear-gradient(45deg, rgba(0,0,0,0.1) 25%, transparent 25%),
+    linear-gradient(-45deg, rgba(0,0,0,0.1) 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, rgba(0,0,0,0.1) 75%),
+    linear-gradient(-45deg, transparent 75%, rgba(0,0,0,0.1) 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+}
+
+/* Film grain effect */
+.film-grain {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%' height='100%' filter='url(%23noise)' opacity='0.1'/%3E%3C/svg%3E");
+  pointer-events: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+}
+
+/* Speed lines */
+.speed-lines {
+  background-image:
+    linear-gradient(90deg, transparent 50%, rgba(0,0,0,0.1) 50%),
+    linear-gradient(0deg, transparent 50%, rgba(0,0,0,0.1) 50%);
+  background-size: 10px 10px;
+  background-position: 0 0, 5px 5px;
+}
+
+/* Gradient fills for emotions */
+.gradient-happy {
+  background: linear-gradient(135deg, #FDE047 0%, #F97316 100%);
+}
+
+.gradient-sad {
+  background: linear-gradient(135deg, #60A5FA 0%, #06B6D4 100%);
+}
+
+.gradient-angry {
+  background: linear-gradient(135deg, #F87171 0%, #DB2777 100%);
+}
+
+.gradient-shock {
+  background: linear-gradient(135deg, #C084FC 0%, #7C3AED 100%);
+}
+
+.gradient-calm {
+  background: linear-gradient(135deg, #34D399 0%, #10B981 100%);
+}
+
+.gradient-excited {
+  background: linear-gradient(135deg, #F472B6 0%, #EC4899 100%);
+}
+
+/* Panel layout utilities */
+.panel-single {
+  grid-column: 1 / -1;
+}
+
+.panel-horizontal {
+  grid-column: 1 / -1;
+  height: 200px;
+}
+
+.panel-vertical {
+  height: 400px;
+}
+
+.panel-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.panel-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.panel-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 1rem;
+}
+
+/* Onomatopoeia text styles */
+.onomatopoeia {
+  font-family: 'Bangers', cursive;
+  font-size: 2rem;
+  font-weight: bold;
+  letter-spacing: 0.2em;
+  text-shadow: 4px 4px 0px rgba(0,0,0,0.3);
+}

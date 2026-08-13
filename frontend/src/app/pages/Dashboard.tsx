@@ -1,5 +1,6 @@
 import { motion } from "motion/react";
 import { Link } from "react-router";
+import { MessageSquare, Users, BookOpen, ChevronRight } from "lucide-react";
 import { useStore } from "../store";
 import { companionColorClasses, cn } from "../utils";
 
@@ -213,6 +214,92 @@ export default function Dashboard() {
                      <div className="text-xs text-zinc-500 text-center">No upcoming unlocks</div>
                   )}
                 </ul>
+              </section>
+
+              {/* Study Buddy Widget */}
+              <section className="bg-gradient-to-br from-purple-900/20 to-zinc-900 border border-purple-800/50 rounded-3xl p-6 relative overflow-hidden">
+                <div className="absolute -top-10 -right-10 w-32 h-32 bg-purple-500/10 rounded-full blur-3xl" />
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">Study Buddies</h3>
+                  <Link
+                    to="/app/study-buddy/matches"
+                    className="text-xs text-purple-400 hover:text-purple-300 transition-colors"
+                  >
+                    Find Matches
+                  </Link>
+                </div>
+
+                <div className="space-y-3">
+                  <Link
+                    to="/app/qa"
+                    className="block p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl hover:border-purple-700 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-purple-600/20 flex items-center justify-center">
+                        <MessageSquare className="w-5 h-5 text-purple-400" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium">Peer Q&A Forum</div>
+                        <div className="text-xs text-zinc-500">Ask questions and help other students</div>
+                      </div>
+                      <ChevronRight className="w-4 h-4 ml-auto text-zinc-600" />
+                    </div>
+                  </Link>
+
+                  <Link
+                    to="/app/study-buddy/matches"
+                    className="block p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl hover:border-purple-700 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-purple-600/20 flex items-center justify-center">
+                        <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium">Find Study Buddies</div>
+                        <div className="text-xs text-zinc-500">Match with students who share your interests</div>
+                      </div>
+                      <svg className="w-4 h-4 ml-auto text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </div>
+                  </Link>
+
+                  <Link
+                    to="/app/study-buddy/connections"
+                    className="block p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl hover:border-purple-700 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-purple-600/20 flex items-center justify-center">
+                        <svg className="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium">Your Connections</div>
+                        <div className="text-xs text-zinc-500">Manage study buddy connections</div>
+                      </div>
+                      <svg className="w-4 h-4 ml-auto text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </div>
+                  </Link>
+                </div>
+
+                {myCompanions.length > 0 && (
+                  <Link
+                    to="/app/study-buddy/profile"
+                    className="block mt-4 p-3 bg-zinc-900/50 border border-zinc-800 rounded-xl hover:border-purple-700 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 text-sm text-zinc-400">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                      Complete Your Study Profile
+                    </div>
+                  </Link>
+                )}
               </section>
             </div>
           </div>

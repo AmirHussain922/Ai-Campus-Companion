@@ -2,7 +2,7 @@ import { useState } from "react";
 import { motion } from "motion/react";
 import { Link, useNavigate } from "react-router";
 
-const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || "http://127.0.0.1:8000/api";
+const API_BASE_URL = ((import.meta as any).env?.VITE_API_BASE_URL ?? "http://localhost:8000") + '/api';
 
 type Step = "email" | "otp" | "success";
 
@@ -40,16 +40,23 @@ export default function ForgotPassword() {
         setSuccessMessage(data.message);
         setStep("otp");
       } else {
-        // Handle both cases: detail is an object with message, or detail is a string
+        // Extract message from error response
         let errorMsg = "Failed to send reset code";
-        if (data.detail) {
-          if (typeof data.detail === "string") {
-            errorMsg = data.detail;
-          } else if (data.detail.message) {
-            errorMsg = data.detail.message;
-          }
-        } else if (data.message) {
+        if (data?.message) {
           errorMsg = data.message;
+        } else if (data?.detail) {
+          const detail = data.detail;
+          if (typeof detail === "object" && detail !== null) {
+            if (typeof detail.message === "string") {
+              errorMsg = detail.message;
+            } else if (Array.isArray(detail) && detail.length > 0) {
+              errorMsg = detail.map((e: any) => e.msg || e.message || String(e)).join("; ");
+            } else {
+              errorMsg = JSON.stringify(detail);
+            }
+          } else if (typeof detail === "string") {
+            errorMsg = detail;
+          }
         }
         console.error("Error message:", errorMsg);
         setError(errorMsg);

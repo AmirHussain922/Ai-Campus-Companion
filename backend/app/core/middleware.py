@@ -169,25 +169,16 @@ class CORSMiddlewareConfig:
             app: FastAPI application
             settings: Application settings with CORS configuration
         """
-        # In development, allow all localhost ports
-        if settings.app_env == "development":
-            origins = [
-                "http://localhost:3000",
-                "http://localhost:5173",
-                "http://localhost:5174",
-                "http://localhost:5175",
-                "http://127.0.0.1:3000",
-                "http://127.0.0.1:5173",
-                "http://127.0.0.1:5174",
-                "http://127.0.0.1:5175",
-            ]
-            # Also add any custom origins from settings
-            for origin in settings.cors_allow_origins:
-                if origin not in origins:
-                    origins.append(origin)
-        else:
-            # In production, be strict about origins
-            origins = settings.cors_allow_origins
+        # Use settings.cors_allow_origins directly
+        # For development with empty setting, default to localhost
+        origins = settings.cors_allow_origins
+        if not origins:
+            if settings.app_env == "development":
+                origins = ["http://localhost:3000", "http://localhost:5173"]
+                logger.warning("CORS_ORIGINS not set. Defaulting to localhost for development.")
+            else:
+                logger.error("CORS_ORIGINS is empty. This will prevent requests from all origins!")
+                origins = ["http://localhost:3000"]  # Fallback to localhost
 
         # Log CORS configuration
         logger.info(f"Configuring CORS with origins: {origins}")

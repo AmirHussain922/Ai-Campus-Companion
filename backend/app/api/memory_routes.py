@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.core.validation import PaginationParams
 from app.memory.embedding_client import embed_text
 from app.memory.memory import get_memory_store
 from app.services.openrouter_client import OpenRouterError
@@ -49,35 +50,87 @@ async def add_memory(req: AddMemoryRequest) -> AddMemoryResponse:
     return AddMemoryResponse(id=memory_id)
 
 
-@router.get("/search", response_model=list[SearchMemoryResponseItem])
+@router.get("/search", response_model=dict)
 async def search_memory(
     user_id: str = "local",
     companion_id: str = "",
     query: str = "",
     k: int = 5,
-) -> list[SearchMemoryResponseItem]:
+    pagination: PaginationParams = Depends(),
+) -> dict:
+    """
+    Search memories with pagination support.
+
+    Args:
+        user_id: User ID
+        companion_id: Companion ID (required)
+        query: Search query
+        k: Number of results to return (deprecated, use pagination.limit instead)
+        pagination: Pagination parameters
+
+    Returns:
+        Paginated search results with envelope structure
+    """
     if not companion_id:
         raise HTTPException(status_code=400, detail="companion_id is required.")
     if not query:
-        return []
+        return {
+            "data": [],
+            "pagination": {
+                "limit": pagination.limit,
+                "offset": pagination.offset,
+                "total": 0
+            }
+        }
 
     store = get_memory_store()
     try:
         vec = await embed_text(text=query)
     except OpenRouterError:
-        return []
-    memories = await store.search_memories(user_id=user_id, companion_id=companion_id, query_embedding=vec, k=k)
-    return [
-        SearchMemoryResponseItem(
-            id=m.id,
-            memory_type=m.memory_type,
-            content=m.content,
-            metadata=m.metadata,
-            importance=m.importance,
-            created_at=m.created_at,
-        )
-        for m in memories
-    ]
+        return {
+            "data": [],
+            "pagination": {
+                "limit": pagination.limit,
+                "offset": pagination.offset,
+                "total": 0
+            }
+        }
+
+    # Use pagination limit if provided, otherwise use k
+    limit = pagination.limit if pagination.limit <= 100 else 100
+    memories = await store.search_memories(
+        user_id=user_id,
+        companion_id=companion_id,
+        query_embedding=vec,
+        k=limit
+    )
+
+    # Apply offset
+    start_idx = pagination.offset
+    end_idx = start_idx + limit
+    paginated_memories = memories[start_idx:end_idx]
+
+    # Get total count
+    total_memories = await store.count_memories(user_id=user_id, companion_id=companion_id)
+
+    return {
+        "data": [
+            SearchMemoryResponseItem(
+                id=m.id,
+                memory_type=m.memory_type,
+                content=m.content,
+                metadata=m.metadata,
+                importance=m.importance,
+                created_at=m.created_at,
+            )
+            for m in paginated_memories
+        ],
+        "pagination": {
+            "limit": limit,
+            "offset": pagination.offset,
+            "total": total_memories
+        }
+    }
 
 
 class ScenarioUnlockRequest(BaseModel):
@@ -158,8 +211,40 @@ async def add_feedback(req: FeedbackRequest) -> FeedbackResponse:
     return FeedbackResponse(id=fid)
 
 
-@router.get("/feedback/export")
-async def export_feedback(user_id: str = "local", companion_id: str | None = None) -> list[dict]:
+@router.get("/feedback/export", response_model=dict)
+async def export_feedback(
+    user_id: str = "local",
+    companion_id: str | None = None,
+    pagination: PaginationParams = Depends()
+) -> dict:
+    """
+    Export feedback with pagination support.
+
+    Args:
+        user_id: User ID
+        companion_id: Companion ID (optional)
+        pagination: Pagination parameters
+
+    Returns:
+        Paginated feedback with envelope structure
+    """
     store = get_memory_store()
-    return await store.export_feedback(user_id=user_id, companion_id=companion_id)
+    feedback = await store.export_feedback(user_id=user_id, companion_id=companion_id)
+
+    # Apply pagination
+    start_idx = pagination.offset
+    end_idx = start_idx + pagination.limit
+    paginated_feedback = feedback[start_idx:end_idx]
+
+    # Get total count
+    total = len(feedback)
+
+    return {
+        "data": paginated_feedback,
+        "pagination": {
+            "limit": pagination.limit,
+            "offset": pagination.offset,
+            "total": total
+        }
+    }
 

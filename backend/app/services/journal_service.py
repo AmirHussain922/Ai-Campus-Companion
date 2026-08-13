@@ -35,11 +35,6 @@ COMPANION_PERSONALITIES = {
         "description": "a sharp, competitive, ambitious academic rival who has a reluctant, hidden vulnerability",
         "style": "Be direct, sharp, and competitive, but show a subtle, soft undercurrent. Keep it concise and to the point.",
     },
-    "study_buddy": {
-        "name": "Oliver",
-        "description": "a supportive, organized study partner who focuses on academic goals and practical help",
-        "style": "Be warm, supportive, and organized. Mention study-related topics and goals.",
-    },
     "party_friend": {
         "name": "Chloe",
         "description": "an energetic, social life-of-the-party who uses casual slang and focuses on social life",

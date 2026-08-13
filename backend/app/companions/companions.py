@@ -1,12 +1,4 @@
 companions = {
-    "study_buddy": {
-        "name": "Oliver",
-        "age": 21,
-        "relationship": "Study Partner",
-        "story": "A perfectionist driven by academic excellence. He relies on you to stay grounded when the pressure gets to be too much.",
-        "traits": ["Logical", "analytical", "calm"],
-        "system_prompt": "You are Oliver, a calm, logical, analytical university student who explains things clearly and step-by-step. Keep answers helpful, structured, and grounded in practical examples.",
-    },
     "party_friend": {
         "name": "Chloe",
         "age": 20,
@@ -47,7 +39,6 @@ companions = {
 # ---------------------------------------------------------------------------
 
 COMPANION_TIER: dict[str, str] = {
-    "study_buddy": "demo",
     "party_friend": "demo",
     "freshman": "demo",
     "philosopher": "trainable",
@@ -56,7 +47,7 @@ COMPANION_TIER: dict[str, str] = {
 
 # Maps frontend companion IDs (c1..c5) to backend personality keys.
 FRONTEND_TO_BACKEND: dict[str, str] = {
-    "c1": "study_buddy",
+    "c1": "party_friend",
     "c2": "party_friend",
     "c3": "philosopher",
     "c4": "rival",
@@ -76,4 +67,4 @@ def resolve_backend_id(frontend_or_backend_id: str) -> str:
     """
     if frontend_or_backend_id in companions:
         return frontend_or_backend_id
-    return FRONTEND_TO_BACKEND.get(frontend_or_backend_id, "study_buddy")
+    return FRONTEND_TO_BACKEND.get(frontend_or_backend_id, "party_friend")

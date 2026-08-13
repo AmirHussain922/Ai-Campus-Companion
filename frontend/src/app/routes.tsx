@@ -22,8 +22,12 @@ import CompanionProfilePage from "./pages/CompanionProfilePage";
 import EpisodesListPage from "./pages/EpisodesListPage";
 import EpisodePlayer from "./components/EpisodePlayer";
 import JournalPage from "./pages/JournalPage";
-import QuestBoardPage from "./pages/QuestBoardPage";
-import GroupChatPage from "./pages/GroupChatPage";
+import StudyBuddyProfileSetup from "./pages/StudyBuddyProfileSetup";
+import StudyBuddyMatches from "./pages/StudyBuddyMatches";
+import StudyBuddyConnections from "./pages/StudyBuddyConnections";
+import StudyBuddyDM from "./pages/StudyBuddyDM";
+import PeerQAList from "./pages/PeerQAList";
+import QuestionDetail from "./pages/QuestionDetail";
 import StudyRoomPage from "./pages/StudyRoomPage";
 
 // Protected Route Component - requires authentication
@@ -70,10 +74,14 @@ export const router = createBrowserRouter([
         { path: "companion/:companionId/episodes", element: <EpisodesListPage /> },
         { path: "companion/:companionId/episodes/play/:episodeId", element: <EpisodePlayer /> },
         { path: "companion/:companionId/journal", element: <JournalPage /> },
-        { path: "quests", element: <QuestBoardPage /> },
-        { path: "campus-lounge", element: <GroupChatPage /> },
-        { path: "study-room", element: <StudyRoomPage /> },
         { path: "me", element: <UserProfile /> },
+        { path: "study-buddy/profile", element: <StudyBuddyProfileSetup /> },
+        { path: "study-buddy/matches", element: <StudyBuddyMatches /> },
+        { path: "study-buddy/connections", element: <StudyBuddyConnections /> },
+        { path: "study-buddy/dm/:conversationId", element: <StudyBuddyDM /> },
+        { path: "qa", element: <PeerQAList /> },
+        { path: "qa/:id", element: <QuestionDetail /> },
+        { path: "study-rooms", element: <StudyRoomPage /> },
         { path: "settings/personal", element: <SettingsPersonal /> },
         { path: "settings/security", element: <SettingsSecurity /> },
         { path: "settings/notifications", element: <SettingsNotifications /> },

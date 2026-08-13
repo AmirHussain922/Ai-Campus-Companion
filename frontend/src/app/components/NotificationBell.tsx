@@ -93,8 +93,6 @@ export default function NotificationBell() {
         return <Mail className="w-3 h-3" />;
       case 'milestone_congrats':
         return <Trophy className="w-3 h-3" />;
-      case 'quest_reminder':
-        return <Check className="w-3 h-3" />;
       case 'story_nudge':
         return <BookOpen className="w-3 h-3" />;
       default:

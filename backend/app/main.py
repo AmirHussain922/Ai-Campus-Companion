@@ -8,6 +8,7 @@ database initialization, route registration, and background worker management.
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -16,25 +17,36 @@ except ImportError:
     _scheduler_available = False
     logging.warning("APScheduler not available - skipping scheduled jobs")
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.core.database import close_mongo_connection, setup_database_indexes, is_database_available
 from app.memory.memory import get_memory_store
 from app.core.middleware import setup_security_middleware
+from app.core.validation import MaxBodySizeMiddleware
+from app.core.error_responses import AppException
+from app.core.logging import configure_redacting_filter
+from app.core.error_responses import (
+    app_exception_handler,
+    http_exception_handler,
+    general_exception_handler,
+    create_error_response,
+    create_success_response
+)
 
 # Import routers
 from app.api.auth_routes import router as auth_router
 from app.api.chat_routes import router as chat_router
+from app.api.health_routes import router as health_router
 from app.api.memory_routes import router as memory_router
 from app.api.episodes import router as episodes_router
 from app.api.journals import router as journals_router
 from app.api.proactive import router as proactive_router
-from app.api.quests import router as quests_router
 from app.api.media import router as media_router
-from app.api.group_chat import router as group_chat_router
 from app.api.study import router as study_router
+from app.api.study_buddy import router as study_buddy_router
 
 # Try importing RL routes optionally - SKIP COMPLETELY FOR NOW
 rl_router = None
@@ -58,6 +70,10 @@ def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
     settings = get_settings()
 
+    # Configure logging with redaction
+    from app.core.logging import setup_logging
+    setup_logging(log_level="INFO" if settings.debug else "WARNING")
+
     app = FastAPI(
         title=settings.app_name,
         description="AI-powered campus companion with secure authentication and RL-driven companions",
@@ -71,31 +87,87 @@ def create_app() -> FastAPI:
     if _scheduler_available:
         scheduler = AsyncIOScheduler()
 
+    # Generate unique request ID for every request
+    @app.middleware("http")
+    async def add_request_id(request: Request, call_next):
+        """Add request ID to every request for tracking."""
+        request_id = str(uuid.uuid4())
+        request.state.request_id = request_id
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
+    # Register AppException handler
+    @app.exception_handler(AppException)
+    async def app_exception_handler(request: Request, exc: AppException):
+        """Handle application-specific exceptions."""
+        logger.warning(
+            f"AppException [{exc.status_code}]: {exc.message}",
+            extra={
+                "request_id": getattr(request.state, "request_id", "unknown"),
+                "exception_type": exc.__class__.__name__,
+                "error_code": exc.error_code
+            }
+        )
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "success": False,
+                "error_code": exc.error_code or f"HTTP_{exc.status_code}",
+                "message": exc.message,
+                "details": exc.details,
+                "request_id": getattr(request.state, "request_id", "unknown")
+            }
+        )
+
     @app.exception_handler(Exception)
-    async def global_exception_handler(request, exc):
-        logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    async def global_exception_handler(request: Request, exc: Exception):
+        """Handle unhandled exceptions."""
+        request_id = getattr(request.state, "request_id", "unknown")
+        logger.error(
+            f"Unhandled exception: {exc}",
+            extra={
+                "request_id": request_id,
+                "exception_type": type(exc).__name__
+            },
+            exc_info=True
+        )
         return JSONResponse(
             status_code=500,
             content={
                 "success": False,
+                "error_code": "INTERNAL_001",
                 "message": "Internal server error",
-                "error_code": "SERVER_001",
-            },
+                "details": {},
+                "request_id": request_id
+            }
         )
 
+    # Add max body size middleware before security middleware
+    app.add_middleware(MaxBodySizeMiddleware, max_size=1_048_576)  # 1MB
+
     setup_security_middleware(app)
+
+    # Configure CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.cors_allow_origins + ["http://localhost:5179"],
+        allow_credentials=settings.cors_allow_credentials,
+        allow_methods=settings.cors_allow_methods,
+        allow_headers=settings.cors_allow_headers + ["*"],
+    )
 
     # Register routes
     app.include_router(auth_router, prefix="/api")
     app.include_router(chat_router, prefix="/api")
+    app.include_router(health_router, prefix="/api")
     app.include_router(memory_router, prefix="/api")
     app.include_router(episodes_router, prefix="/api")
     app.include_router(journals_router, prefix="/api")
     app.include_router(proactive_router, prefix="/api")
-    app.include_router(quests_router, prefix="/api")
     app.include_router(media_router, prefix="/api")
-    app.include_router(group_chat_router, prefix="/api")
     app.include_router(study_router, prefix="/api")
+    app.include_router(study_buddy_router, prefix="/api")
 
     if rl_router is not None:
         app.include_router(rl_router, prefix="/api")
@@ -130,6 +202,30 @@ def create_app() -> FastAPI:
     @app.on_event("startup")
     async def startup_event():
         logger.info(f"Starting {settings.app_name} v2.0...")
+
+        # Validate CORS origins in production
+        if settings.app_env != "development":
+            from app.constants.error_codes import ValidationError
+            if settings.cors_allow_origins:
+                # Check for localhost
+                localhost_origins = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]"]
+                invalid_origins = []
+
+                for origin in settings.cors_allow_origins:
+                    origin_lower = origin.lower()
+                    for localhost in localhost_origins:
+                        if localhost in origin_lower:
+                            logger.critical(f"CRITICAL: Localhost origin detected in production CORS: {origin}")
+                            logger.critical("Production applications should only allow specific domain origins")
+                            logger.critical("This will cause security issues in production!")
+                            invalid_origins.append(origin)
+
+                # Reject localhost origins in production
+                if invalid_origins:
+                    raise ValidationError(
+                        f"Production CORS configuration contains invalid origins: {', '.join(invalid_origins)}. "
+                        f"Localhost origins ('localhost', '127.0.0.1', '0.0.0.0', '[::1]') are not allowed in production."
+                    )
 
         try:
             await setup_database_indexes()
@@ -195,8 +291,18 @@ def create_app() -> FastAPI:
                     next_run_time=datetime.now(timezone.utc) + timedelta(minutes=10),  # First run after 10 minutes
                 )
 
+                # Add daily quest generation job (at 6:00 AM)
+                scheduler.add_job(
+                    lambda: QuestService.generate_all_daily_quests(),
+                    'cron',
+                    hour=6,
+                    minute=0,
+                    id='daily_quest_generation',
+                    replace_existing=True,
+                )
+
                 scheduler.start()
-                logger.info("Scheduled jobs started including proactive messaging")
+                logger.info("Scheduled jobs started including proactive messaging and daily quest generation")
             except Exception as e:
                 logger.warning(f"Failed to start scheduled jobs: {e}")
 

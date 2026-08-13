@@ -9,6 +9,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.core.auth import get_current_active_user
+from app.core.validation import PaginationParams
 from app.models import JournalEntryResponse, JournalReadRequest, UserInDB
 from app.services.journal_service import JournalService
 from app.companions.companions import resolve_backend_id
@@ -18,29 +19,56 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.get("/journals/{companion_id}", response_model=list[JournalEntryResponse])
+@router.get("/journals/{companion_id}", response_model=dict)
 async def get_journals(
     companion_id: str,
     user: UserInDB = Depends(get_current_active_user),
-) -> list[JournalEntryResponse]:
-    """Get all unlocked journal entries for a specific companion."""
+    pagination: PaginationParams = Depends(),
+) -> dict:
+    """
+    Get all unlocked journal entries for a specific companion with pagination.
+
+    Args:
+        companion_id: Companion ID (frontend key)
+        user: Current authenticated user
+        pagination: Pagination parameters
+
+    Returns:
+        Paginated journal entries with envelope structure
+    """
     try:
         backend_id = resolve_backend_id(companion_id)
-        journals = await JournalService.get_unlocked_journals(str(user.id), backend_id)
-        return [
-            JournalEntryResponse(
-                id=str(j.id),
-                user_id=j.user_id,
-                companion_id=j.companion_id,
-                stage=j.stage,
-                entry_text=j.entry_text,
-                is_unlocked=j.is_unlocked,
-                unlocked_at=j.unlocked_at,
-                is_read=j.is_read,
-                generated_at=j.generated_at,
-            )
-            for j in journals
-        ]
+        all_journals = await JournalService.get_unlocked_journals(str(user.id), backend_id)
+
+        # Apply pagination
+        start_idx = pagination.offset
+        end_idx = start_idx + pagination.limit
+        paginated_journals = all_journals[start_idx:end_idx]
+
+        # Get total count
+        total = len(all_journals)
+
+        return {
+            "data": [
+                JournalEntryResponse(
+                    id=str(j.id),
+                    user_id=j.user_id,
+                    companion_id=j.companion_id,
+                    stage=j.stage,
+                    entry_text=j.entry_text,
+                    is_unlocked=j.is_unlocked,
+                    unlocked_at=j.unlocked_at,
+                    is_read=j.is_read,
+                    generated_at=j.generated_at,
+                )
+                for j in paginated_journals
+            ],
+            "pagination": {
+                "limit": pagination.limit,
+                "offset": pagination.offset,
+                "total": total
+            }
+        }
     except Exception as e:
         logger.error(f"Error getting journals: {e}")
         raise HTTPException(

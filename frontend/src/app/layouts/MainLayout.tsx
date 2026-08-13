@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Outlet, NavLink, useNavigate, useLocation } from "react-router";
-import { LayoutDashboard, Settings, User, Menu, X, ChevronLeft, ChevronRight, ScrollText, Users, BookOpen } from "lucide-react";
+import { LayoutDashboard, Settings, User, Menu, X, ChevronLeft, ChevronRight, ScrollText, Users, BookOpen, Trophy, MessageSquare, Search, UserCheck } from "lucide-react";
 import { useStore } from "../store";
 import { companionColorClasses, cn } from "../utils";
 import ToastContainer from "../components/ToastContainer";
@@ -84,35 +84,36 @@ export default function MainLayout() {
             Dashboard
           </NavLink>
 
-          {/* New Campus Features */}
-          <div className="pt-6 pb-2 px-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">
-            Campus
-          </div>
-          
           <NavLink 
-            to="/app/quests"
+            to="/app/qa"
             className={({isActive}) => `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${isActive ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-900'}`}
           >
-            <ScrollText className="w-4 h-4" />
-            Quests
-            <span className="ml-auto px-1.5 py-0.5 bg-amber-500/20 text-amber-400 text-xs rounded">3</span>
+            <MessageSquare className="w-4 h-4" />
+            Peer Q&A
           </NavLink>
-          
+
           <NavLink 
-            to="/app/campus-lounge"
+            to="/app/study-rooms"
             className={({isActive}) => `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${isActive ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-900'}`}
           >
             <Users className="w-4 h-4" />
-            Campus Lounge
-            <span className="ml-auto w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+            Study Rooms
           </NavLink>
-          
+
           <NavLink 
-            to="/app/study-room"
+            to="/app/study-buddy/matches"
             className={({isActive}) => `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${isActive ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-900'}`}
           >
-            <BookOpen className="w-4 h-4" />
-            Study Room
+            <Search className="w-4 h-4" />
+            Find Study Buddies
+          </NavLink>
+
+          <NavLink 
+            to="/app/study-buddy/connections"
+            className={({isActive}) => `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${isActive ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-900'}`}
+          >
+            <UserCheck className="w-4 h-4" />
+            Your Connections
           </NavLink>
 
           <div className="pt-6 pb-2 px-3 text-xs font-semibold text-zinc-500 uppercase tracking-wider">

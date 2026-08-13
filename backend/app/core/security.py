@@ -17,11 +17,8 @@ from pydantic import EmailStr, ValidationError
 # Regular expression patterns
 HTML_TAG_PATTERN: Pattern = re.compile(r"<[^>]+>")
 JAVASCRIPT_SCHEME_PATTERN: Pattern = re.compile(r"javascript:", re.IGNORECASE)
-SQL_INJECTION_PATTERN: Pattern = re.compile(
-    r"(\b(union|select|insert|update|delete|drop|create|alter|exec|execute)\b)|"
-    r"(--|#|/\*|\*/)",
-    re.IGNORECASE
-)
+# MongoDB injection prevention is achieved via parameterized queries, not pattern matching.
+# We only perform basic sanity checks for null bytes and dangerous content.
 EMAIL_PATTERN: Pattern = re.compile(
     r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
 )
@@ -82,29 +79,31 @@ def validate_no_javascript(text: str) -> bool:
     return not JAVASCRIPT_SCHEME_PATTERN.search(text)
 
 
-def validate_no_sql_injection(text: str) -> bool:
+def validate_no_null_bytes(text: str) -> None:
     """
-    Basic check for common SQL injection patterns.
+    Basic sanity check for null bytes which can cause issues in database operations.
 
-    Note: This is a basic check. Use parameterized queries for proper protection.
+    This is not injection prevention - MongoDB injection is prevented via
+    proper parameterized queries and BSON encoding. This is simply to catch
+    malformed input that could cause unexpected behavior.
 
     Args:
         text: The input text to validate.
 
-    Returns:
-        True if no SQL injection patterns found, False otherwise.
+    Raises:
+        ValueError: If null bytes are found in the input.
     """
     if not text or not isinstance(text, str):
-        return True
+        return
 
-    return not SQL_INJECTION_PATTERN.search(text)
+    if '\x00' in text:
+        raise ValueError("Input contains null bytes which are not allowed")
 
 
 def sanitize_input(
     text: str,
     max_length: int = 10000,
     allow_html: bool = False,
-    check_sql: bool = True,
     check_javascript: bool = True
 ) -> str:
     """
@@ -114,7 +113,6 @@ def sanitize_input(
         text: The input text to sanitize.
         max_length: Maximum allowed length.
         allow_html: Whether to allow HTML tags (default: False).
-        check_sql: Whether to check for SQL injection patterns.
         check_javascript: Whether to check for javascript: schemes.
 
     Returns:
@@ -126,6 +124,9 @@ def sanitize_input(
     if not text or not isinstance(text, str):
         return ""
 
+    # Basic sanity check for null bytes
+    validate_no_null_bytes(text)
+
     # Check length
     if len(text) > max_length:
         raise ValueError(f"Input exceeds maximum length of {max_length} characters")
@@ -133,10 +134,6 @@ def sanitize_input(
     # Check for JavaScript schemes
     if check_javascript and not validate_no_javascript(text):
         raise ValueError("Input contains potentially dangerous content (javascript: scheme)")
-
-    # Check for SQL injection
-    if check_sql and not validate_no_sql_injection(text):
-        raise ValueError("Input contains potentially dangerous content (SQL injection patterns)")
 
     # Handle HTML
     if not allow_html:
@@ -164,12 +161,14 @@ def validate_email_format(email: str) -> bool:
     return bool(EMAIL_PATTERN.match(email))
 
 
-def validate_password_strength(password: str) -> tuple[bool, str]:
+def validate_password_strength(password: str, user_email: str = "", user_name: str = "") -> tuple[bool, str]:
     """
-    Validate password strength according to security requirements.
+    Validate password strength using zxcvbn and additional checks.
 
     Args:
         password: The password to validate.
+        user_email: User's email for personalization
+        user_name: User's name for personalization
 
     Returns:
         Tuple of (is_valid, error_message).
@@ -183,22 +182,64 @@ def validate_password_strength(password: str) -> tuple[bool, str]:
     if len(password) > 128:
         return False, "Password must not exceed 128 characters"
 
-    if not any(c.isupper() for c in password):
-        return False, "Password must contain at least one uppercase letter"
+    try:
+        from zxcvbn import zxcvbn
 
-    if not any(c.islower() for c in password):
-        return False, "Password must contain at least one lowercase letter"
+        # Get personalization inputs (email local part and name)
+        personalization = [user_email.split("@")[0] if user_email else "", user_name]
 
-    if not any(c.isdigit() for c in password):
-        return False, "Password must contain at least one number"
+        # Run zxcvbn analysis
+        result = zxcvbn(password, user_inputs=personalization)
 
-    if not SPECIAL_CHARS_PATTERN.search(password):
-        return False, "Password must contain at least one special character (!@#$%^&*()_+-=[]{}|;:,.<>?)"
+        # zxcvbn returns scores 0-4, where 3+ is considered strong
+        if result["score"] < 3:
+            suggestions = result["feedback"]["suggestions"]
+            if suggestions:
+                return False, f"Password is too weak: {'; '.join(suggestions)}"
+            return False, "Password is too weak"
 
-    # Check for common patterns
-    common_passwords = ["password", "123456", "qwerty", "admin", "letmein"]
-    if password.lower() in common_passwords:
-        return False, "Password is too common, please choose a more unique password"
+    except ImportError:
+        logger.warning("zxcvbn not installed. Using basic password validation.")
+
+        # Fallback to basic validation if zxcvbn is not available
+        if not any(c.isupper() for c in password):
+            return False, "Password must contain at least one uppercase letter"
+
+        if not any(c.islower() for c in password):
+            return False, "Password must contain at least one lowercase letter"
+
+        if not any(c.isdigit() for c in password):
+            return False, "Password must contain at least one number"
+
+        if not SPECIAL_CHARS_PATTERN.search(password):
+            return False, "Password must contain at least one special character (!@#$%^&*()_+-=[]{}|;:,.<>?)"
+
+        # Check for common patterns
+        common_passwords = ["password", "123456", "qwerty", "admin", "letmein", "welcome"]
+        if password.lower() in common_passwords:
+            return False, "Password is too common, please choose a more unique password"
+
+        # Check for sequential patterns
+        sequential_patterns = [
+            r'(0123456789|234567890|345678901|456789012|567890123|678901234|789012345|890123456|901234567|123456789)',
+            r'(abcdef|bcdefg|cdefgh|defghi|efghij|fghijk|ghijkl|hijklm|ijklmn|jklmno|klmnop|lmnopq|mnopqr|nopqrs|opqrst|pqrstu|qrstuv|rstuvw|stuvwx|tuvwxy|uvwxyz)',
+            r'(abc|bcd|cde|def|efg|fgh|ghi|hij|ijk|jkl|klm|lmn|mno|nop|opq|pqr|qrs|rst|stu|tuv|uvw|vwx|wxy|xyz)',
+            r'(a|b|c|d|e|f|g|h|i|j|k|l|m|n|o|p|q|r|s|t|u|v|w|x|y|z)',
+        ]
+
+        for pattern in sequential_patterns:
+            if re.search(pattern, password, re.IGNORECASE):
+                return False, "Password contains sequential or repeated patterns"
+
+    # Check for password reuse by checking against common patterns
+    sequential_patterns = [
+        r'(0123456789|234567890|345678901|456789012|567890123|678901234|789012345|890123456|901234567|123456789)',
+        r'(abc|bcd|cde|def|efg|fgh|ghi|hij|ijk|jkl|klm|lmn|mno|nop|opq|pqr|qrs|rst|stu|tuv|uvw|vwx|wxy|xyz)',
+    ]
+
+    for pattern in sequential_patterns:
+        if re.search(pattern, password, re.IGNORECASE):
+            return False, "Password contains sequential or repeated patterns"
 
     return True, ""
 

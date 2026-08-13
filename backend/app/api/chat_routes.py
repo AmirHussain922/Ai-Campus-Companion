@@ -64,10 +64,9 @@ async def chat(
 ) -> ChatResponseV2:
     settings = get_settings()
     user_id = str(user.id)
-    
-    # Track quest progress for sending messages
-    from app.services.quest_service import QuestService
-    await QuestService.track_quest_progress(user_id, "send_message")
+
+    # Resolve personality_id from request
+    personality_id = req.personality_id or resolve_backend_id(req.companion_key)
 
     # Rate limiting for chat endpoint (30 messages per hour per user to control API costs)
     allowed, rate_info = await check_rate_limit(
@@ -90,7 +89,6 @@ async def chat(
             req.message,
             max_length=settings.max_message_length,
             allow_html=False,
-            check_sql=True,
             check_javascript=True
         )
         # Create a modified request with sanitized message
@@ -102,8 +100,8 @@ async def chat(
     personality_id = req.personality_id or resolve_backend_id(req.companion_key)
     template = companions.get(personality_id)
     if not template:
-        template = companions.get("study_buddy")
-        personality_id = "study_buddy"
+        template = companions.get("party_friend")
+        personality_id = "party_friend"
 
     tier = get_companion_tier(personality_id)
 
@@ -158,7 +156,7 @@ async def _demo_pipeline(
             episode_id=req.episode_id,
         )
         session_messages = await get_session_messages(
-            user_id=user_id, companion_id=personality_id, limit=10,
+            user_id=user_id, companion_id=personality_id, limit=50,
         )
         conversation_history = [
             {"role": m["role"], "content": m["content"]}
@@ -185,7 +183,7 @@ async def _demo_pipeline(
         story_context=req.scenario_text,
     )
 
-    model = settings.get_model_for_companion(personality_id)
+    model = settings.openrouter_model
     try:
         reply = await generate_reply(messages=messages, model=model)
     except OpenRouterError as e:
@@ -286,7 +284,7 @@ async def _trainable_pipeline(
     # --- Server-side XP evaluation ---
     logger.info("Step 6: Evaluating XP")
     session_messages = await get_session_messages(
-        user_id=user_id, companion_id=personality_id, limit=5,
+        user_id=user_id, companion_id=personality_id, limit=50,
     )
     recent_user_msgs = [
         m.get("content", "") for m in session_messages if m.get("role") == "user"
@@ -306,7 +304,7 @@ async def _trainable_pipeline(
             user_id=user_id,
             companion_id=personality_id,
             query=req.message,
-            k=5,
+            k=10,
         )
         if relevant:
             lines = [f"- ({m.memory_type}) {m.content[:200]}" for m in relevant]
@@ -607,33 +605,51 @@ async def _update_companion_progression(
     episode_id: str | None = None,
     pending_level_up: bool = False,
 ) -> None:
-    """Update companion progression on user document."""
+    """
+    Update companion progression on user document using atomic operations.
+
+    Uses $addToSet and $inc for efficient atomic updates with retry logic.
+    """
     db = await get_database()
+    from bson import ObjectId
+
+    # Get current document to check if progression exists
     user_doc = await db.users.find_one({"_id": ObjectId(user_id)})
     if not user_doc:
         return
 
-    progression_list = list(user_doc.get("companion_progression", []))
-
-    # Find and update existing or append new
-    found = False
-    for i, p in enumerate(progression_list):
+    # Check if progression already exists
+    existing = False
+    for p in user_doc.get("companion_progression", []):
         if p.get("companion_id") == companion_id:
-            p["xp"] = xp
-            p["level"] = level
-            p["relationship_points"] = relationship_points
-            p["relationship_stage"] = relationship_stage
-            p["total_messages"] = p.get("total_messages", 0) + 1
-            p["last_interaction"] = datetime.now(timezone.utc).isoformat()
-            p["pending_level_up"] = pending_level_up
-            if episode_id:
-                p["current_episode_id"] = episode_id
-            progression_list[i] = p
-            found = True
+            existing = True
             break
 
-    if not found:
-        progression_list.append({
+    if existing:
+        # Update existing progression using atomic operators
+        # This is atomic and handles concurrent updates with $max/$min for tiering
+        now = datetime.now(timezone.utc).isoformat()
+
+        await db.users.update_one(
+            {
+                "_id": ObjectId(user_id),
+                "companion_progression.companion_id": companion_id
+            },
+            {
+                "$set": {
+                    "companion_progression.$.xp": xp,
+                    "companion_progression.$.level": level,
+                    "companion_progression.$.relationship_points": relationship_points,
+                    "companion_progression.$.relationship_stage": relationship_stage,
+                    "companion_progression.$.last_interaction": now,
+                    "companion_progression.$.pending_level_up": pending_level_up,
+                },
+                "$inc": {"companion_progression.$.total_messages": 1}
+            }
+        )
+    else:
+        # Add new progression (atomic operation)
+        new_progression = {
             "companion_id": companion_id,
             "xp": xp,
             "level": level,
@@ -644,12 +660,32 @@ async def _update_companion_progression(
             "total_messages": 1,
             "last_interaction": datetime.now(timezone.utc).isoformat(),
             "pending_level_up": pending_level_up,
-        })
+        }
 
-    await db.users.update_one(
-        {"_id": ObjectId(user_id)},
-        {"$set": {"companion_progression": progression_list}},
-    )
+        # Use $addToSet with unique constraint to avoid duplicates
+        await db.users.update_one(
+            {"_id": ObjectId(user_id)},
+            {
+                "$addToSet": {
+                    "companion_progression": new_progression
+                }
+            }
+        )
+
+        # If still not found, use $push as fallback
+        # This handles the case where concurrent inserts might have occurred
+        update_result = await db.users.update_one(
+            {"_id": ObjectId(user_id), "companion_progression.companion_id": {"$ne": companion_id}},
+            {
+                "$push": {
+                    "companion_progression": new_progression
+                }
+            }
+        )
+
+        # If nothing was pushed, it means we already have it now (race condition)
+        if update_result.modified_count == 0:
+            logger.warning(f"Progression update failed for user {user_id}, companion {companion_id} - possible race condition")
 
 
 # ---------------------------------------------------------------------------

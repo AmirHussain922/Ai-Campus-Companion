@@ -3,10 +3,13 @@ OTP (One-Time Password) service for email verification.
 
 Provides secure OTP generation, storage, and validation with MongoDB TTL indexes
 for automatic expiration.
+OTP hashes are stored with SHA-256 + pepper for security.
 """
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 import secrets
 from datetime import datetime, timedelta
@@ -15,6 +18,7 @@ from typing import Optional
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.config import get_settings
 from app.core.database import get_database
 
 logger = logging.getLogger(__name__)
@@ -121,17 +125,24 @@ class OTPService:
         """
         Create and store a new OTP for the given email.
 
+        OTP is hashed with SHA-256 + pepper before storage.
+        No plaintext OTP is stored in the database.
+
         Args:
             email: User email address
             purpose: OTP purpose (registration, password_reset, etc.)
 
         Returns:
-            Generated OTP code
+            Generated OTP code (for immediate use)
 
         Raises:
             OTPRateLimitError: If too many OTP requests
         """
         db = await self._get_db()
+        settings = get_settings()
+
+        # Use provided pepper or fall back to default (will fail in production without config)
+        pepper = settings.otp_pepper or secrets.token_urlsafe(32)
 
         # Check rate limiting
         rate_key = f"otp_resend:{email.lower()}"
@@ -157,10 +168,13 @@ class OTPService:
         now = datetime.utcnow()
         expires_at = now + timedelta(minutes=self._otp_ttl_minutes)
 
-        # Store OTP in database
+        # Hash the OTP with pepper for secure storage
+        hashed_otp = self._hash_otp(otp, purpose.value, now, pepper)
+
+        # Store hashed OTP in database
         await db.otps.insert_one({
             "email": email.lower(),
-            "otp": otp,
+            "otp_hash": hashed_otp,  # Storing hash, not plaintext
             "purpose": purpose.value,
             "expires_at": expires_at,
             "created_at": now,
@@ -186,6 +200,50 @@ class OTPService:
 
         logger.info(f"OTP created for {email} with purpose {purpose.value}")
         return otp
+
+    @staticmethod
+    def _hash_otp(otp: str, purpose: str, timestamp: datetime, pepper: str) -> str:
+        """
+        Hash OTP with SHA-256 using pepper for secure storage.
+
+        Args:
+            otp: Plain text OTP
+            purpose: OTP purpose
+            timestamp: Creation timestamp
+            pepper: Secret pepper for hashing
+
+        Returns:
+            SHA-256 hash of the input
+        """
+        # Normalize timestamp to remove timezone offset for consistent hashing
+        # isoformat() with tzinfo includes +00:00, but we need it without
+        hash_input = f"{otp}:{purpose}:{timestamp.isoformat(timespec='auto')[:-6]}:{pepper}"
+        return hashlib.sha256(hash_input.encode()).hexdigest()
+
+    @staticmethod
+    def _verify_otp_hash(
+        submitted_otp: str,
+        stored_hash: str,
+        purpose: str,
+        timestamp: datetime,
+        pepper: str
+    ) -> bool:
+        """
+        Verify OTP by comparing hash.
+
+        Args:
+            submitted_otp: Plain text OTP to verify
+            stored_hash: Stored hash from database
+            purpose: OTP purpose
+            timestamp: Creation timestamp
+            pepper: Secret pepper for hashing
+
+        Returns:
+            True if OTP matches
+        """
+        expected_hash = OTPService._hash_otp(submitted_otp, purpose, timestamp, pepper)
+        # Use constant-time comparison to prevent timing attacks
+        return hmac.compare_digest(expected_hash, stored_hash)
 
     async def verify_otp(
         self,
@@ -213,6 +271,10 @@ class OTPService:
         """
         db = await self._get_db()
         now = datetime.utcnow()
+        settings = get_settings()
+
+        # Use provided pepper or fall back to default
+        pepper = settings.otp_pepper or secrets.token_urlsafe(32)
 
         # Find OTP record
         otp_record = await db.otps.find_one({
@@ -237,9 +299,18 @@ class OTPService:
             await db.otps.delete_one({"_id": otp_record["_id"]})
             raise OTPInvalidError("Too many failed attempts. Please request a new OTP.")
 
-        # Verify OTP
-        stored_otp = otp_record.get("otp")
-        if not stored_otp or stored_otp != otp:
+        # Verify OTP using hash comparison
+        stored_hash = otp_record.get("otp_hash")
+        if not stored_hash:
+            raise OTPInvalidError("Invalid OTP. Please try again.")
+
+        # Use stored timestamp from OTP record
+        created_at = otp_record.get("created_at", now)
+        timestamp = created_at if isinstance(created_at, datetime) else datetime.fromisoformat(created_at)
+
+        is_valid = self._verify_otp_hash(otp, stored_hash, purpose.value, timestamp, pepper)
+
+        if not is_valid:
             # Increment attempts
             await db.otps.update_one(
                 {"_id": otp_record["_id"]},

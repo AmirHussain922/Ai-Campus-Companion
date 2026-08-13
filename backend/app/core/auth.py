@@ -74,7 +74,8 @@ def create_token(
     email: str,
     role: UserRole = UserRole.USER,
     token_type: TokenType = TokenType.ACCESS,
-    jti: Optional[str] = None
+    jti: Optional[str] = None,
+    family: Optional[str] = None
 ) -> str:
     """
     Create a JWT token.
@@ -85,6 +86,7 @@ def create_token(
         role: User role
         token_type: Token type (access or refresh)
         jti: JWT ID (generated if not provided)
+        family: Token family identifier for rotation/revocation
 
     Returns:
         Encoded JWT token string.
@@ -104,12 +106,21 @@ def create_token(
     if jti is None:
         jti = secrets.token_urlsafe(32)
 
+    # Generate token family if not provided (for refresh tokens)
+    # Access tokens use a separate family for security isolation
+    if family is None:
+        if token_type == TokenType.ACCESS:
+            family = f"access:{user_id}:{now.timestamp()}"
+        else:
+            family = f"family:{user_id}:{now.timestamp()}"
+
     # Create payload
     payload = {
         "user_id": user_id,
         "email": email,
         "role": role.value,
         "jti": jti,
+        "family": family,
         "exp": exp,
         "iat": now,
         "type": token_type.value
@@ -149,6 +160,7 @@ def decode_token(token: str) -> Optional[TokenData]:
             email=payload["email"],
             role=UserRole(payload.get("role", "user")),
             jti=payload["jti"],
+            family=payload.get("family", ""),
             exp=datetime.fromtimestamp(payload["exp"]),
             iat=datetime.fromtimestamp(payload["iat"]),
             type=TokenType(payload.get("type", "access"))
@@ -209,6 +221,35 @@ async def blacklist_token(jti: str, expires_at: datetime) -> None:
         logger.debug(f"Token {jti[:8]}... added to blacklist")
     except Exception as e:
         logger.error(f"Error blacklisting token: {e}")
+        raise
+
+
+async def blacklist_token_family(family: str, expires_at: datetime, user_id: str) -> None:
+    """
+    Add all tokens in a family to the blacklist.
+
+    Args:
+        family: Token family identifier.
+        expires_at: Token expiration time.
+        user_id: User ID for lookup.
+    """
+    try:
+        db = await get_database()
+        now = datetime.utcnow()
+
+        # Mark all tokens with this family as revoked
+        result = await db.revoked_tokens.update_many(
+            {"family": family, "expires_at": {"$gt": now}},
+            {
+                "$set": {
+                    "expires_at": expires_at,
+                    "revoked_at": now
+                }
+            }
+        )
+        logger.info(f"Revoked {result.modified_count} tokens in family: {family[:16]}...")
+    except Exception as e:
+        logger.error(f"Error blacklisting token family: {e}")
         raise
 
 
@@ -444,6 +485,29 @@ async def get_current_active_user(
             headers={"X-Error-Code": "AUTH_002"}
         )
     return current_user
+
+
+def get_current_user_id(token: str) -> str:
+    """
+    Extract user ID from JWT token.
+
+    Args:
+        token: JWT access token.
+
+    Returns:
+        User ID extracted from token payload.
+
+    Raises:
+        HTTPException: If token is invalid or expired.
+    """
+    token_data = decode_token(token)
+    if not token_data:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return token_data.user_id
 
 
 class RequireRole:
