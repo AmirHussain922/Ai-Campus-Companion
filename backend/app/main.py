@@ -203,8 +203,8 @@ def create_app() -> FastAPI:
     async def startup_event():
         logger.info(f"Starting {settings.app_name} v2.0...")
 
-        # Validate CORS origins in production
-        if settings.app_env != "development":
+        # Validate CORS origins in development only
+        if settings.app_env == "development":
             from app.core.error_responses import AppException
             if settings.cors_allow_origins:
                 # Check for localhost
@@ -215,16 +215,15 @@ def create_app() -> FastAPI:
                     origin_lower = origin.lower()
                     for localhost in localhost_origins:
                         if localhost in origin_lower:
-                            logger.critical(f"CRITICAL: Localhost origin detected in production CORS: {origin}")
-                            logger.critical("Production applications should only allow specific domain origins")
-                            logger.critical("This will cause security issues in production!")
+                            logger.critical(f"CRITICAL: Localhost origin detected in development CORS: {origin}")
+                            logger.critical("Development applications should not use localhost in production.")
                             invalid_origins.append(origin)
 
-                # Reject localhost origins in production
+                # Reject localhost origins in development
                 if invalid_origins:
                     raise AppException(
-                        message=f"Production CORS configuration contains invalid origins: {', '.join(invalid_origins)}. "
-                               f"Localhost origins ('localhost', '127.0.0.1', '0.0.0.0', '[::1]') are not allowed in production.",
+                        message=f"Development CORS configuration contains invalid origins: {', '.join(invalid_origins)}. "
+                               f"Localhost origins ('localhost', '127.0.0.1', '0.0.0.0', '[::1]') should only be used in development.",
                         error_code="CORS_INVALID_ORIGINS",
                         status_code=400
                     )
