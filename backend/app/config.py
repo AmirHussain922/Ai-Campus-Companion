@@ -133,14 +133,15 @@ class Settings(BaseSettings):
     cors_allow_origins: list[str] = Field(
         default=["http://localhost:3000"],
         alias="CORS_ORIGINS",
-        default_factory=lambda: ["http://localhost:3000"]
+        default_factory=lambda: ["http://localhost:3000"],
+        init=False
     )
     cors_origins: str = Field(
         default="http://localhost:*,http://localhost:3000,http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5179,http://localhost:5180,http://localhost:5181",
         alias="CORS_ORIGINS_STR"
     )
 
-    @field_validator("cors_allow_origins", mode="before")
+    @field_validator("cors_allow_origins", mode="after")
     @classmethod
     def validate_cors_origins(cls, v):
         # If v is None or empty string or whitespace, return default
