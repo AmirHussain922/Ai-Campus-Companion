@@ -131,8 +131,9 @@ class Settings(BaseSettings):
     # CORS Settings
     # ============================================
     cors_allow_origins: list[str] = Field(
-        default=["http://localhost:*", "http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5179", "http://localhost:5180", "http://localhost:5181"],
-        alias="CORS_ORIGINS"
+        default=["http://localhost:3000"],
+        alias="CORS_ORIGINS",
+        default_factory=lambda: ["http://localhost:3000"]
     )
     cors_origins: str = Field(
         default="http://localhost:*,http://localhost:3000,http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5179,http://localhost:5180,http://localhost:5181",
@@ -145,18 +146,25 @@ class Settings(BaseSettings):
         # If v is None or empty string or whitespace, return default
         if not v or (isinstance(v, str) and not v.strip()):
             # Check if we're in production
-            app_env = get_settings().app_env if hasattr(cls, '_parent_class_name') else "development"
+            try:
+                app_env = get_settings().app_env if hasattr(cls, '_parent_class_name') else "development"
+            except:
+                app_env = "development"
+
             if app_env == "production":
                 return ["https://ai-campus-companion.onrender.com"]
             else:
-                return ["http://localhost:*", "http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5179", "http://localhost:5180", "http://localhost:5181"]
+                return ["http://localhost:3000"]
+
         if isinstance(v, str):
             # Split comma-separated string
-            if v.strip():  # Only split if not empty after stripping
-                return [item.strip() for item in v.split(",") if item.strip()]
-            else:
-                return ["https://ai-campus-companion.onrender.com"] if app_env == "production" else ["http://localhost:3000"]
-        return v
+            return [item.strip() for item in v.split(",") if item.strip()]
+
+        # If it's already a list, return it
+        if isinstance(v, list):
+            return v
+
+        return []
 
     @field_validator("cors_allow_origins")
     @classmethod
