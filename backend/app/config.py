@@ -142,6 +142,14 @@ class Settings(BaseSettings):
     @field_validator("cors_allow_origins", mode="before")
     @classmethod
     def validate_cors_origins(cls, v):
+        # If v is None or empty string, return default
+        if not v:
+            # Check if we're in production
+            app_env = get_settings().app_env if hasattr(cls, '_parent_class_name') else "development"
+            if app_env == "production":
+                return ["https://ai-campus-companion.onrender.com"]
+            else:
+                return ["http://localhost:*", "http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5179", "http://localhost:5180", "http://localhost:5181"]
         if isinstance(v, str):
             # Split comma-separated string
             return [item.strip() for item in v.split(",") if item.strip()]
