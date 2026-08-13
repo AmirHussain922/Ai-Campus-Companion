@@ -131,7 +131,6 @@ class Settings(BaseSettings):
     # CORS Settings
     # ============================================
     cors_allow_origins: list[str] = Field(
-        default=["http://localhost:3000"],
         default_factory=lambda: ["http://localhost:3000"],
         init=False
     )
