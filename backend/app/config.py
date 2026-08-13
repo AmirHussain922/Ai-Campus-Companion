@@ -132,7 +132,6 @@ class Settings(BaseSettings):
     # ============================================
     cors_allow_origins: list[str] = Field(
         default=["http://localhost:3000"],
-        alias="CORS_ORIGINS",
         default_factory=lambda: ["http://localhost:3000"],
         init=False
     )
@@ -146,12 +145,9 @@ class Settings(BaseSettings):
     def validate_cors_origins(cls, v):
         # If v is None or empty string or whitespace, return default
         if not v or (isinstance(v, str) and not v.strip()):
-            # Check if we're in production
-            try:
-                app_env = get_settings().app_env if hasattr(cls, '_parent_class_name') else "development"
-            except:
-                app_env = "development"
-
+            # Get app_env from environment
+            import os
+            app_env = os.environ.get("APP_ENV", "development")
             if app_env == "production":
                 return ["https://ai-campus-companion.onrender.com"]
             else:
@@ -165,7 +161,7 @@ class Settings(BaseSettings):
         if isinstance(v, list):
             return v
 
-        return []
+        return ["https://ai-campus-companion.onrender.com"]
 
     @field_validator("cors_allow_origins")
     @classmethod
