@@ -205,7 +205,7 @@ def create_app() -> FastAPI:
 
         # Validate CORS origins in production
         if settings.app_env != "development":
-            from app.constants.error_codes import ValidationError
+            from app.core.error_responses import AppException
             if settings.cors_allow_origins:
                 # Check for localhost
                 localhost_origins = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]"]
@@ -222,9 +222,11 @@ def create_app() -> FastAPI:
 
                 # Reject localhost origins in production
                 if invalid_origins:
-                    raise ValidationError(
-                        f"Production CORS configuration contains invalid origins: {', '.join(invalid_origins)}. "
-                        f"Localhost origins ('localhost', '127.0.0.1', '0.0.0.0', '[::1]') are not allowed in production."
+                    raise AppException(
+                        message=f"Production CORS configuration contains invalid origins: {', '.join(invalid_origins)}. "
+                               f"Localhost origins ('localhost', '127.0.0.1', '0.0.0.0', '[::1]') are not allowed in production.",
+                        error_code="CORS_INVALID_ORIGINS",
+                        status_code=400
                     )
 
         try:
