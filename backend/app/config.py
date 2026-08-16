@@ -179,25 +179,63 @@ class Settings(BaseSettings):
 
     @field_validator("cors_allow_methods")
     @classmethod
-    def validate_cors_allow_methods(cls, v: str | list[str]) -> list[str]:
+    def validate_cors_allow_methods(cls, v: str | list[str] | None) -> list[str]:
         """Validate and parse CORS allow methods."""
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+
         # If it's a string, try to parse as comma-separated list
         if isinstance(v, str):
-            if v.strip():
+            try:
+                # Try parsing as JSON first
+                import json
+                parsed = json.loads(v)
+                if isinstance(parsed, str):
+                    return [method.strip().upper() for method in parsed.split(',')]
+                elif isinstance(parsed, list):
+                    return [str(item).strip().upper() for item in parsed]
+                elif isinstance(parsed, dict):
+                    return list(parsed.keys())
+                return [v.strip().upper()]
+            except json.JSONDecodeError:
+                # If not JSON, try comma-separated
                 return [method.strip().upper() for method in v.split(',')]
-            return ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
-        return v
+
+        # If it's already a list, return it
+        if isinstance(v, list):
+            return v
+
+        return [str(v).strip().upper()]
 
     @field_validator("cors_allow_headers")
     @classmethod
-    def validate_cors_allow_headers(cls, v: str | list[str]) -> list[str]:
+    def validate_cors_allow_headers(cls, v: str | list[str] | None) -> list[str]:
         """Validate and parse CORS allow headers."""
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return ["Content-Type", "Authorization"]
+
         # If it's a string, try to parse as comma-separated list
         if isinstance(v, str):
-            if v.strip():
+            try:
+                # Try parsing as JSON first
+                import json
+                parsed = json.loads(v)
+                if isinstance(parsed, str):
+                    return [header.strip() for header in parsed.split(',')]
+                elif isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed]
+                elif isinstance(parsed, dict):
+                    return list(parsed.values())
+                return [v.strip()]
+            except json.JSONDecodeError:
+                # If not JSON, try comma-separated
                 return [header.strip() for header in v.split(',')]
-            return ["Content-Type", "Authorization"]
-        return v
+
+        # If it's already a list, return it
+        if isinstance(v, list):
+            return v
+
+        return [str(v).strip()]
 
     cors_allow_credentials: bool = Field(
         default=True,
