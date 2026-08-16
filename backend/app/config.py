@@ -322,6 +322,46 @@ class Settings(BaseSettings):
         alias="OPENROUTER_MODEL"
     )
 
+    # ============================================
+    # Firebase Configuration
+    # ============================================
+    firebase_project_id: Optional[str] = Field(
+        default=None,
+        alias="FIREBASE_PROJECT_ID"
+    )
+    firebase_private_key_id: Optional[str] = Field(
+        default=None,
+        alias="FIREBASE_PRIVATE_KEY_ID"
+    )
+    firebase_private_key: Optional[str] = Field(
+        default=None,
+        alias="FIREBASE_PRIVATE_KEY"
+    )
+    firebase_client_email: Optional[str] = Field(
+        default=None,
+        alias="FIREBASE_CLIENT_EMAIL"
+    )
+    firebase_client_id: Optional[str] = Field(
+        default=None,
+        alias="FIREBASE_CLIENT_ID"
+    )
+    firebase_auth_uri: Optional[str] = Field(
+        default=None,
+        alias="FIREBASE_AUTH_URI"
+    )
+    firebase_token_uri: Optional[str] = Field(
+        default=None,
+        alias="FIREBASE_TOKEN_URI"
+    )
+    firebase_auth_provider_x509_cert_url: Optional[str] = Field(
+        default=None,
+        alias="FIREBASE_AUTH_PROVIDER_X509_CERT_URL"
+    )
+    firebase_client_x509_cert_url: Optional[str] = Field(
+        default=None,
+        alias="FIREBASE_CLIENT_X509_CERT_URL"
+    )
+
     get_model_for_companion: callable = None
     openrouter_embedding_model: str = Field(
         default="openai/text-embedding-3-small",
