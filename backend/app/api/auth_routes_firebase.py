@@ -28,7 +28,7 @@ from app.services.firebase_auth_service import (
 )
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api/auth", tags=["Authentication"])
+router = APIRouter(tags=["Authentication"])
 
 # Pydantic models for Firebase authentication
 class UserCreateFirebase(BaseModel):
