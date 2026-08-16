@@ -90,7 +90,18 @@ export function useStudyBuddyWebSocket({
               onDisconnected?.();
               break;
 
+            case "message_sent":
+              // Handle message sent confirmation from backend
+              if (data.message) {
+                console.log(`[Study Buddy WS] Received message_sent event:`, data.message);
+                onMessage?.(data.message);
+              } else {
+                console.warn(`[Study Buddy WS] message_sent event received but no message data`);
+              }
+              break;
+
             case "new_message":
+              // Handle new message from other participant
               if (data.message) {
                 onMessage?.(data.message);
               }

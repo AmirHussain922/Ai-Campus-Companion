@@ -54,7 +54,7 @@ export interface Message {
 }
 
 interface AppState {
-  user: { name: string; email: string } | null;
+  user: { id: string; name: string; email: string } | null;
   authToken: string | null;
   refreshToken: string | null;
   companions: Companion[];
@@ -402,8 +402,12 @@ export const useStore = create<AppState>()(
             authToken: tokens.access_token,
             refreshToken: tokens.refresh_token ?? null,
             user: tokens.user
-              ? { name: tokens.user.full_name ?? tokens.user.email, email: tokens.user.email }
-              : { name: email.split('@')[0], email },
+              ? {
+                  id: tokens.user.id || tokens.user._id,
+                  name: tokens.user.full_name ?? tokens.user.email,
+                  email: tokens.user.email
+                }
+              : { id: '', name: email.split('@')[0], email },
           });
           localStorage.setItem('authToken', tokens.access_token);
           localStorage.setItem('refreshToken', tokens.refresh_token ?? '');

@@ -39,6 +39,7 @@ from app.core.error_responses import (
 # Import routers
 from app.api.auth_routes import router as auth_router
 from app.api.chat_routes import router as chat_router
+from app.api.contact_routes import router as contact_router
 from app.api.health_routes import router as health_router
 from app.api.memory_routes import router as memory_router
 from app.api.episodes import router as episodes_router
@@ -160,6 +161,7 @@ def create_app() -> FastAPI:
     # Register routes
     app.include_router(auth_router, prefix="/api")
     app.include_router(chat_router, prefix="/api")
+    app.include_router(contact_router, prefix="/api")
     app.include_router(health_router, prefix="/api")
     app.include_router(memory_router, prefix="/api")
     app.include_router(episodes_router, prefix="/api")
@@ -203,11 +205,11 @@ def create_app() -> FastAPI:
     async def startup_event():
         logger.info(f"Starting {settings.app_name} v2.0...")
 
-        # Validate CORS origins in development only
-        if settings.app_env == "development":
+        # Validate CORS origins - reject localhost in production only
+        if settings.app_env == "production":
             from app.core.error_responses import AppException
             if settings.cors_allow_origins:
-                # Check for localhost
+                # Check for localhost in production
                 localhost_origins = ["localhost", "127.0.0.1", "0.0.0.0", "[::1]"]
                 invalid_origins = []
 
@@ -215,14 +217,14 @@ def create_app() -> FastAPI:
                     origin_lower = origin.lower()
                     for localhost in localhost_origins:
                         if localhost in origin_lower:
-                            logger.critical(f"CRITICAL: Localhost origin detected in development CORS: {origin}")
-                            logger.critical("Development applications should not use localhost in production.")
+                            logger.critical(f"CRITICAL: Localhost origin detected in production CORS: {origin}")
+                            logger.critical("Production applications should not use localhost.")
                             invalid_origins.append(origin)
 
-                # Reject localhost origins in development
+                # Reject localhost origins in production
                 if invalid_origins:
                     raise AppException(
-                        message=f"Development CORS configuration contains invalid origins: {', '.join(invalid_origins)}. "
+                        message=f"Production CORS configuration contains invalid origins: {', '.join(invalid_origins)}. "
                                f"Localhost origins ('localhost', '127.0.0.1', '0.0.0.0', '[::1]') should only be used in development.",
                         error_code="CORS_INVALID_ORIGINS",
                         status_code=400

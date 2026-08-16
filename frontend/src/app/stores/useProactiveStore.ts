@@ -3,11 +3,11 @@ import axios from 'axios';
 
 const API_BASE_URL = ((import.meta as any).env?.VITE_API_BASE_URL ?? 'http://localhost:8000') + '/api';
 
-export type ProactiveTriggerType = 
-  | 'good_morning' 
-  | 'miss_you' 
-  | 'milestone_congrats' 
-  | 'quest_reminder' 
+export type ProactiveTriggerType =
+  | 'good_morning'
+  | 'miss_you'
+  | 'milestone_congrats'
+  | 'quest_reminder'
   | 'story_nudge';
 
 export interface ProactiveMessage {
@@ -32,14 +32,14 @@ interface ProactiveState {
   unreadCount: number;
   isLoading: boolean;
   lastFetchedAt: number | null;
-  
+
   // Actions
   fetchUnread: (authToken: string | null) => Promise<void>;
   markAsRead: (messageId: string, authToken: string | null) => Promise<boolean>;
   markAllForCompanionAsRead: (companionId: string, authToken: string | null) => Promise<void>;
   pollUnread: (authToken: string | null) => Promise<void>;
   getUnreadForCompanion: (companionId: string) => ProactiveMessage[];
-  
+
   // For toast notifications
   getNewMessagesSince: (timestamp: number) => ProactiveMessage[];
 }
@@ -54,27 +54,27 @@ export const useProactiveStore = create<ProactiveState>((set, get) => ({
   // Fetch unread messages from API
   fetchUnread: async (authToken: string | null) => {
     if (!authToken) return;
-    
+
     set({ isLoading: true });
-    
+
     try {
       const response = await axios.get(`${API_BASE_URL}/proactive/unread`, {
         headers: {
           Authorization: `Bearer ${authToken}`,
         },
       });
-      
+
       const unreadMessages: UnreadByCompanion[] = response.data || [];
       const totalUnread = unreadMessages.reduce(
-        (sum, group) => sum + group.unread_count, 
+        (sum, group) => sum + group.unread_count,
         0
       );
-      
-      set({ 
-        unreadMessages, 
+
+      set({
+        unreadMessages,
         unreadCount: totalUnread,
         lastFetchedAt: Date.now(),
-        isLoading: false 
+        isLoading: false
       });
     } catch (error) {
       console.error('Failed to fetch unread proactive messages:', error);
@@ -85,7 +85,7 @@ export const useProactiveStore = create<ProactiveState>((set, get) => ({
   // Mark a single message as read
   markAsRead: async (messageId: string, authToken: string | null) => {
     if (!authToken) return false;
-    
+
     try {
       await axios.post(
         `${API_BASE_URL}/proactive/read/${messageId}`,
@@ -96,7 +96,7 @@ export const useProactiveStore = create<ProactiveState>((set, get) => ({
           },
         }
       );
-      
+
       // Update local state
       const { unreadMessages } = get();
       const updatedMessages = unreadMessages.map(group => ({
@@ -104,17 +104,17 @@ export const useProactiveStore = create<ProactiveState>((set, get) => ({
         messages: group.messages.filter(m => m.id !== messageId),
         unread_count: group.messages.filter(m => m.id !== messageId).length,
       })).filter(group => group.unread_count > 0);
-      
+
       const totalUnread = updatedMessages.reduce(
-        (sum, group) => sum + group.unread_count, 
+        (sum, group) => sum + group.unread_count,
         0
       );
-      
-      set({ 
-        unreadMessages: updatedMessages, 
-        unreadCount: totalUnread 
+
+      set({
+        unreadMessages: updatedMessages,
+        unreadCount: totalUnread
       });
-      
+
       return true;
     } catch (error) {
       console.error('Failed to mark message as read:', error);
@@ -125,10 +125,10 @@ export const useProactiveStore = create<ProactiveState>((set, get) => ({
   // Mark all messages for a companion as read
   markAllForCompanionAsRead: async (companionId: string, authToken: string | null) => {
     if (!authToken) return;
-    
+
     const { unreadMessages, getUnreadForCompanion } = get();
     const messagesToMark = getUnreadForCompanion(companionId);
-    
+
     // Mark each message as read
     await Promise.all(
       messagesToMark.map(msg => get().markAsRead(msg.id, authToken))
@@ -138,14 +138,14 @@ export const useProactiveStore = create<ProactiveState>((set, get) => ({
   // Poll for new unread messages (called every 5 minutes)
   pollUnread: async (authToken: string | null) => {
     if (!authToken) return;
-    
+
     const { lastFetchedAt } = get();
-    
+
     // Only poll if we haven't fetched recently (within last 4 minutes)
     if (lastFetchedAt && Date.now() - lastFetchedAt < 4 * 60 * 1000) {
       return;
     }
-    
+
     await get().fetchUnread(authToken);
   },
 
@@ -160,7 +160,7 @@ export const useProactiveStore = create<ProactiveState>((set, get) => ({
   getNewMessagesSince: (timestamp: number) => {
     const { unreadMessages } = get();
     const newMessages: ProactiveMessage[] = [];
-    
+
     unreadMessages.forEach(group => {
       group.messages.forEach(msg => {
         const msgTime = new Date(msg.sent_at).getTime();
@@ -169,7 +169,7 @@ export const useProactiveStore = create<ProactiveState>((set, get) => ({
         }
       });
     });
-    
+
     return newMessages;
   },
 }));

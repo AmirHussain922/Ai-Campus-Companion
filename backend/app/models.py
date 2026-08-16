@@ -1005,6 +1005,14 @@ class StudyBuddyMatchResult(BaseModel):
     match_reasons: list[MatchReasonResponse]
     strong_subjects_overlap: list[str]
     weak_subjects_help: list[str]
+    # Public profile information
+    country: str
+    city: str
+    campus_university: str
+    major: str
+    academic_year: str
+    strong_subjects: list[str]
+    weak_subjects: list[str]
 
 
 class StudyBuddyMatchResponse(BaseModel):

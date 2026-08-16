@@ -69,7 +69,12 @@ export default function MessageChat({ conversation, onBack }: MessageChatProps) 
   const { sendMessage: wsSendMessage, isConnected } = useStudyBuddyWebSocket({
     conversationId: conversation.conversation_id,
     onMessage: (message) => {
-      setMessages(prev => [...prev, message]);
+      console.log(`[MessageChat] WebSocket onMessage called:`, message);
+      setMessages(prev => {
+        const newMessages = [...prev, message];
+        console.log(`[MessageChat] WebSocket onMessage - added message to state, total: ${newMessages.length}`);
+        return newMessages;
+      });
     },
     onConnected: () => {
       console.log("WebSocket connected");
@@ -86,16 +91,33 @@ export default function MessageChat({ conversation, onBack }: MessageChatProps) 
       setSending(true);
       setError("");
 
+      const messageContent = input.trim();
+      console.log(`[MessageChat] Sending message: "${messageContent}"`);
+      console.log(`[MessageChat] WebSocket connected: ${isConnected}`);
+
       // Try WebSocket first (real-time)
-      const sentViaWS = wsSendMessage(input.trim());
+      const sentViaWS = wsSendMessage(messageContent);
+      console.log(`[MessageChat] wsSendMessage returned: ${sentViaWS}`);
 
       if (!sentViaWS) {
+        console.log(`[MessageChat] WebSocket not connected, using REST fallback`);
         // Fallback to REST if WebSocket fails
-        await studyBuddyService.sendMessage(conversation.conversation_id, input.trim());
+        const responseMessage = await studyBuddyService.sendMessage(
+          conversation.conversation_id,
+          messageContent
+        );
+        console.log(`[MessageChat] REST response received:`, responseMessage);
+        // Add the returned message to state
+        setMessages(prev => {
+          const newMessages = [...prev, responseMessage];
+          console.log(`[MessageChat] Added REST message to state, total: ${newMessages.length}`);
+          return newMessages;
+        });
       }
 
       setInput("");
     } catch (err) {
+      console.error(`[MessageChat] Error sending message:`, err);
       setError(err instanceof Error ? err.message : "Failed to send message");
     } finally {
       setSending(false);
@@ -181,7 +203,7 @@ export default function MessageChat({ conversation, onBack }: MessageChatProps) 
                 <div
                   className={cn(
                     "max-w-[85%] sm:max-w-[80%] rounded-2xl px-3 py-1.5 sm:px-4 sm:py-2",
-                    own ? "bg-purple-600 text-zinc-950" : "bg-zinc-800 text-zinc-100"
+                    own ? "bg-purple-600 text-white" : "bg-zinc-800 text-zinc-100"
                   )}
                 >
                   <p className="text-xs sm:text-sm whitespace-pre-wrap break-words leading-relaxed">{message.content}</p>

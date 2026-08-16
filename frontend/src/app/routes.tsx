@@ -28,7 +28,7 @@ import StudyBuddyConnections from "./pages/StudyBuddyConnections";
 import StudyBuddyDM from "./pages/StudyBuddyDM";
 import PeerQAList from "./pages/PeerQAList";
 import QuestionDetail from "./pages/QuestionDetail";
-import StudyRoomPage from "./pages/StudyRoomPage";
+// import StudyRoomPage from "./pages/StudyRoomPage"; // Study Rooms temporarily hidden for FYP
 
 // Protected Route Component - requires authentication
 function ProtectedRoute() {
@@ -81,7 +81,7 @@ export const router = createBrowserRouter([
         { path: "study-buddy/dm/:conversationId", element: <StudyBuddyDM /> },
         { path: "qa", element: <PeerQAList /> },
         { path: "qa/:id", element: <QuestionDetail /> },
-        { path: "study-rooms", element: <StudyRoomPage /> },
+        // { path: "study-rooms", element: <StudyRoomPage /> }, // Study Rooms temporarily hidden for FYP
         { path: "settings/personal", element: <SettingsPersonal /> },
         { path: "settings/security", element: <SettingsSecurity /> },
         { path: "settings/notifications", element: <SettingsNotifications /> },

@@ -32,6 +32,16 @@ export interface StudyBuddyMatch {
   match_reasons: MatchReason[];
   strong_subjects_overlap: string[];
   weak_subjects_help: string[];
+  // Public profile information
+  country: string;
+  city: string;
+  campus_university: string;
+  major: string;
+  academic_year: string;
+  strong_subjects: string[];
+  weak_subjects: string[];
+  // Connection state
+  connectionState?: 'not_connected' | 'sending' | 'sent' | 'error';
 }
 
 export interface MatchResponse {
@@ -185,6 +195,14 @@ export const studyBuddyService = {
     message?: string
   ): Promise<ConnectionRequest> {
     const token = useStore.getState().authToken;
+    const tokenExists = !!token;
+
+    console.log('=== SEND REQUEST FETCH ===');
+    console.log('endpoint:', `${API_BASE_URL}/api/study-buddy/request/send`);
+    console.log('recipientId:', recipientId);
+    console.log('message:', message);
+    console.log('current auth token exists:', tokenExists);
+
     const response = await fetch(`${API_BASE_URL}/api/study-buddy/request/send`, {
       method: 'POST',
       headers: {
@@ -193,9 +211,31 @@ export const studyBuddyService = {
       },
       body: JSON.stringify({ recipient_id: recipientId, message }),
     });
+
+    console.log('=== SEND REQUEST RESPONSE ===');
+    console.log('HTTP status:', response.status);
+    console.log('HTTP statusText:', response.statusText);
+
     const result = await response.json();
+    console.log('=== SEND REQUEST BODY ===');
+    console.log('HTTP status:', response.status);
+    console.log('HTTP statusText:', response.statusText);
+    console.log('complete response body (stringified):', JSON.stringify(result, null, 2));
+    console.log('complete response body (object):', result);
+    console.log('result.success:', result.success);
+    console.log('result.message:', result.message);
+    console.log('result.detail:', result.detail);
+    console.log('result.data:', result.data);
+    console.log('result.error:', result.error);
+
     if (!result.success) {
-      throw new Error(result.message || 'Failed to send connection request');
+      console.log('=== SEND REQUEST ERROR ===');
+      console.log('response body (stringified):', JSON.stringify(result, null, 2));
+      console.log('HTTP status:', response.status);
+      console.log('Error message:', result.message);
+      console.log('Error detail:', result.detail);
+      console.log('Error object:', result);
+      throw new Error(result.message || result.detail?.message || 'Failed to send connection request');
     }
     return result.data;
   },
@@ -380,5 +420,21 @@ export const studyBuddyService = {
     if (!data.success) {
       throw new Error(data.message || 'Failed to delete conversation');
     }
+  },
+
+  async cancelConnectionRequest(requestId: string): Promise<ConnectionRequest> {
+    const token = useStore.getState().authToken;
+    const response = await fetch(`${API_BASE_URL}/api/study-buddy/request/cancel?request_id=${requestId}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+    const result = await response.json();
+    if (!result.success) {
+      throw new Error(result.message || 'Failed to cancel connection request');
+    }
+    return result.data;
   },
 };

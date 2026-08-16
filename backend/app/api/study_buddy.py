@@ -207,21 +207,31 @@ async def send_connection_request(
     - Not already connected
     """
     try:
+        logger.info(f"Sending connection request: sender_id={user.id}, recipient_id={request_data.recipient_id}")
         result = await StudyBuddyService.send_connection_request(
             sender_id=str(user.id),
             recipient_id=request_data.recipient_id,
             message=request_data.message,
         )
+        logger.info(f"Connection request successful: request_id={result.id}")
         return {
             "success": True,
             "message": "Connection request sent successfully",
             "data": result.model_dump(),
         }
     except ValueError as e:
-        logger.error(f"Connection request error: {e}")
+        error_msg = str(e)
+        logger.error(f"Connection request failed with ValueError: {error_msg}")
+        logger.error(f"Full traceback will be logged in backend logs")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"message": str(e), "error_code": "SBY_002"}
+            detail={"message": error_msg, "error_code": "SBY_002"}
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in send_connection_request: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"message": "Internal server error", "error_code": "SBY_001"}
         )
     except Exception as e:
         logger.error(f"Error sending connection request: {e}")
@@ -287,6 +297,39 @@ async def respond_to_request(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"message": "Failed to respond to request", "error_code": "SBY_001"}
+        )
+
+
+@router.delete("/request/cancel", response_model=dict)
+async def cancel_request(
+    request_id: str,
+    user: UserInDB = Depends(get_current_active_user),
+):
+    """
+    Cancel a pending connection request.
+
+    Only the sender can cancel their own pending request.
+    """
+    try:
+        result = await StudyBuddyService.cancel_connection_request(
+            request_id, str(user.id)
+        )
+        return {
+            "success": True,
+            "message": "Connection request cancelled",
+            "data": result.model_dump(),
+        }
+    except ValueError as e:
+        logger.error(f"Error cancelling request: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"message": str(e), "error_code": "SBY_005"}
+        )
+    except Exception as e:
+        logger.error(f"Error cancelling request: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"message": "Failed to cancel request", "error_code": "SBY_001"}
         )
 
 

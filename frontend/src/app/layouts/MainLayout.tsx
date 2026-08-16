@@ -92,15 +92,17 @@ export default function MainLayout() {
             Peer Q&A
           </NavLink>
 
-          <NavLink 
+          {/* Study Rooms - Temporarily hidden for FYP demonstration
+             Implementation intentionally preserved for future re-enablement */}
+          {/* <NavLink
             to="/app/study-rooms"
             className={({isActive}) => `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${isActive ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-900'}`}
           >
             <Users className="w-4 h-4" />
             Study Rooms
-          </NavLink>
+          </NavLink> */}
 
-          <NavLink 
+          <NavLink
             to="/app/study-buddy/matches"
             className={({isActive}) => `flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${isActive ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white hover:bg-zinc-900'}`}
           >

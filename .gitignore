@@ -1,9 +1,29 @@
-# Python
+# ============================================
+# AI Campus Companion - Git Ignore
+# ============================================
+# Excludes development artifacts while keeping
+# production-ready code and deployment configs
+
+# ============================================
+# Python / Backend
+# ============================================
+# Compiled files
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+venv38/
+venv39/
+venv310/
+
+# Distribution / packaging
 build/
 develop-eggs/
 dist/
@@ -19,32 +39,87 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+MANIFEST
 
-# Virtual environments
-.venv/
-venv/
-ENV/
-env/
+# PyTest
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+.pytest_cache/
+*.cover
 
-# Environment variables
-.env
-.env.local
-.env.*.local
-.env.backup
+# Jupyter Notebook
+.ipynb_checkpoints
 
-# IDE
+# pyenv
+.python-version
+
+# IDEs
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+.project
+.pydevproject
+.settings/
 
+# OS
+.DS_Store
+Thumbs.db
+
+# ============================================
+# Environment Variables & Secrets
+# ============================================
+# Local environment files
+.env
+.env.local
+.env.*.local
+.env.backup
+.env.render
+
+# Credentials and secrets
+*.pem
+*.key
+*credentials*
+*secret*
+*token*
+*_secrets.txt
+cookies_*.txt
+*.json.backup
+
+# MongoDB local files
+test_aicampus/
+*.mongodb
+mongo-data/
+
+# ============================================
 # Frontend
-frontend/node_modules/
-frontend/dist/
-frontend/test_messages.json
+# ============================================
+node_modules/
+dist/
+*.tsbuildinfo
+*.local
 
-# Logs
+# Testing
+*.test.js
+*.test.ts
+*.test.tsx
+*.spec.js
+*.spec.ts
+*.spec.tsx
+
+# Test messages and outputs
+test_messages.json
+test_*.json
+*_test.json
+test_output.txt
+test_qa_output.txt
+repro_output.txt
+*_output.txt
+
+# Generated files
 *.log
 logs/
 backend.log
@@ -58,33 +133,225 @@ realtime_test.log
 capacity_test.log
 host_test.log
 frontend_start.log
+restart.log
+*.tmp
+backend_new.log.tmp
 
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-coverage.xml
+# Debug and temporary files
+debug_*.md
+debug_*.py
+reproduce_*.py
+*_debug.py
+*_debug.log
+diagnose_*.py
+check_*.py
+manual_*.py
+setup_*.py
+update_*.py
+verify_*.py
+find_*.py
+fix_*.py
+clear_*.py
+start_*.py
+restart_*.py
+prepare_*.py
+register_*.py
+unlock_*.py
+create_*.py
+login*.txt
+login*.json
+token*.txt
+token*.json
+fresh_token.txt
 
-# MongoDB test database
-test_aicampus/
-*.mongodb
+# Frontend specific
+frontend/node_modules/
+frontend/dist/
+frontend/test_emotions.js
+frontend/test_fixed_emotions.js
+frontend/MANGA_*.md
+frontend/INTEGRATION_*.md
+frontend/test_*.js
+frontend/*.log
 
-# Test files (keep locally but don't commit)
+# ============================================
+# Documentation (Keep only key files)
+# ============================================
+# Remove all documentation except README
+*.md
+!README.md
+!README*.md
+!PROJECT_SPECIFICATION_COMPLETE.md
+!openapi.json
+
+# Remove all PDFs
+*.pdf
+
+# Remove all DOCX files
+*.docx
+
+# ============================================
+# Test and Report Files
+# ============================================
+# All test files
 test_*.py
 *_test.py
-*.test.ts
-*.test.tsx
-*.spec.ts
-*.spec.tsx
-reproduce_*.py
-debug_*.py
+*_test.js
+*_test.ts
+*_test.tsx
+*_test.js
+*_test.ts
+*_test.tsx
 
-# Misc
-.DS_Store
-Thumbs.db
+# All report files
+*REPORT*.md
+*REPORT*.txt
+*REPORT*.html
+*BUG*.md
+*BUG*.txt
+*FIX*.md
+*FIX*.txt
+*INVESTIGATION*.md
+*INVESTIGATION*.txt
+*VERIFICATION*.md
+*VERIFICATION*.txt
+*TEST*.md
+*TEST*.txt
+*ERROR*.md
+*ERROR*.txt
+*GUIDE*.md
+*GUIDE*.txt
+*IMPLEMENTATION*.md
+*IMPLEMENTATION*.txt
+*AUDIT*.md
+*AUDIT*.txt
+*COMPLETE*.md
+*COMPLETE*.txt
+*SUMMARY*.md
+*SUMMARY*.txt
+*PHASE*.md
+*PHASE*.txt
+*FEATURE*.md
+*FEATURE*.txt
+*DEPLOYMENT*.md
+*DEPLOYMENT*.txt
 
-# Claude
+# All .md files in root except specified
+*.md
+!README.md
+!PROJECT_SPECIFICATION_COMPLETE.md
+!openapi.json
+!pptinfoproject.md
+
+# All other documentation
+*.docx
+*.pdf
+*.txt
+*.tmp
+
+# ============================================
+# Memory and Cache
+# ============================================
+memory/
+
+# ============================================
+# Claude and Development Tools
+# ============================================
 .claude/
-
-# Continue
 .continue/
+*.md.backup
+*.bak
+
+# ============================================
+# Test Results
+# ============================================
+test_results.log
+test_output.log
+test_broadcast.log
+test_cancellation.log
+test_rejected.log
+*_results.log
+
+# ============================================
+# Coverage
+# ============================================
+htmlcov/
+.coverage
+.coverage.*
+.cache
+
+# ============================================
+# Database Snapshots
+# ============================================
+*.dump
+*.sql
+*.sqlite
+
+# ============================================
+# Uploads and Temporary
+# ============================================
+uploads/
+temp/
+tmp/
+*.tmp
+
+# ============================================
+# Render and Deployment
+# ============================================
+backend/RENDER_ENV_VARS.txt
+backend/.env.render
+
+# ============================================
+# UI and Assets (generated)
+# ============================================
+frontend/public/
+
+# ============================================
+# Test Scripts and Utilities
+# ============================================
+backend/investigate*.py
+backend/list*.py
+backend/show*.py
+backend/pytest.ini
+backend/services/*.backup
+backend/*_debug.py
+backend/*_check.py
+backend/*_setup.py
+backend/*_prepare*.py
+backend/*_manual*.py
+backend/*_update*.py
+backend/*_verify*.py
+backend/*_find*.py
+backend/*_fix*.py
+backend/*_register*.py
+backend/*_unlock*.py
+create*.py
+restart*.py
+pptinfoproject.md
+restart_servers.ps1
+
+
+# ============================================
+# Temporary and Local Scripts
+# ============================================
+*.backup
+*.bak
+*.ps1
+*_start.sh
+*_setup.py
+*_debug.py
+*_check.py
+*_show*.py
+*_list*.py
+*_investigate*.py
+*_prepare*.py
+*_manual*.py
+*_update*.py
+*_verify*.py
+*_find*.py
+*_fix*.py
+*_register*.py
+*_unlock*.py
+create*.py
+restart*.py
+

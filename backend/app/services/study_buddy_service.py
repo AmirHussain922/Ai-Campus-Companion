@@ -342,6 +342,14 @@ class StudyBuddyService:
                 match_reasons=match_reasons,
                 strong_subjects_overlap=strong_overlap[:3],  # Top 3 overlaps
                 weak_subjects_help=weak_help[:3],  # Top 3 ways they can help
+                # Public profile information
+                country=other_profile.get("country", ""),
+                city=other_profile.get("city", ""),
+                campus_university=other_profile.get("campus_university", ""),
+                major=other_profile.get("major", ""),
+                academic_year=other_profile.get("academic_year", ""),
+                strong_subjects=other_profile.get("strong_subjects", []),
+                weak_subjects=other_profile.get("weak_subjects", []),
             ))
 
         # Sort by score and limit
@@ -358,56 +366,148 @@ class StudyBuddyService:
         """
         Send a connection request to another user.
 
-        Args:
-            sender_id: Sender user ID
-            recipient_id: Recipient user ID
-            message: Optional message
+        Validates:
+        - Both users have profiles
+        - Not self-request
+        - No duplicate pending requests
+        - Not already connected
+        - Reuses existing REJECTED or CANCELLED requests to preserve history
 
         Returns:
             ConnectionRequestResponse
         """
         db = await get_database()
 
+        logger.warning(
+            "SEND REQUEST START: sender=%s recipient=%s message=%s",
+            sender_id,
+            recipient_id,
+            message
+        )
+
         # Check if sender has a profile
         sender_profile = await db.study_buddy_profiles.find_one({"user_id": sender_id})
         if not sender_profile:
+            logger.warning("BLOCKED: Sender has no profile")
             raise ValueError("Sender must complete their profile first")
 
         # Check if recipient has a profile
         recipient_profile = await db.study_buddy_profiles.find_one({"user_id": recipient_id})
         if not recipient_profile:
+            logger.warning("BLOCKED: Recipient has no profile")
             raise ValueError("Recipient must complete their profile first")
 
         # Check if self-request
         if sender_id == recipient_id:
+            logger.warning("BLOCKED: Self-request")
             raise ValueError("Cannot send request to yourself")
 
-        # Check if request already exists
+        # Check if request already exists in either direction
         existing = await db.buddy_requests.find_one({
-            "sender_id": sender_id,
-            "recipient_id": recipient_id,
+            "$or": [
+                {"sender_id": sender_id, "recipient_id": recipient_id},
+                {"sender_id": recipient_id, "recipient_id": sender_id}
+            ],
+            "status": {"$in": [ConnectionRequestStatus.PENDING.value, ConnectionRequestStatus.ACCEPTED.value]}
         })
-        if existing:
-            raise ValueError("Connection request already exists")
 
-        # Check if already connected
-        existing_connection = await db.buddy_requests.find_one({
-            "sender_id": sender_id,
-            "recipient_id": recipient_id,
-            "status": ConnectionRequestStatus.ACCEPTED.value
-        })
-        if existing_connection:
-            raise ValueError("Already connected")
-
-        # Create request
-        request = ConnectionRequestInDB(
-            sender_id=sender_id,
-            recipient_id=recipient_id,
-            status=ConnectionRequestStatus.PENDING,
-            message=message,
+        logger.warning(
+            "DUPLICATE REQUEST BLOCKED: sender=%s recipient=%s existing=%s",
+            sender_id,
+            recipient_id,
+            existing
         )
-        result = await db.buddy_requests.insert_one(request.model_dump(exclude={"id"}))
-        request.id = ObjectId(result.inserted_id)
+        logger.warning(
+            "DUPLICATE QUERY: or=[sender_id=%s recipient_id=%s, sender_id=%s recipient_id=%s], status=[%s, %s]",
+            sender_id,
+            recipient_id,
+            recipient_id,
+            sender_id,
+            ConnectionRequestStatus.PENDING.value,
+            ConnectionRequestStatus.ACCEPTED.value
+        )
+
+        if existing:
+            if existing["status"] == ConnectionRequestStatus.ACCEPTED.value:
+                logger.warning("BLOCKING: Existing request is ACCEPTED")
+                raise ValueError("Already connected")
+            if existing["sender_id"] == sender_id:
+                logger.warning(
+                    "BLOCKING: Connection request already sent to this user - existing=%s",
+                    existing
+                )
+                raise ValueError("Connection request already sent")
+            else:
+                logger.warning(
+                    "BLOCKING: Incoming connection request from %s",
+                    existing
+                )
+                raise ValueError("You have an incoming connection request from this user")
+
+        # Check if there's an existing REJECTED or CANCELLED request to reuse
+        # This preserves request history while allowing reconnection
+        existing_rejected = await db.buddy_requests.find_one({
+            "$or": [
+                {"sender_id": sender_id, "recipient_id": recipient_id},
+                {"sender_id": recipient_id, "recipient_id": sender_id}
+            ],
+            "status": {"$in": [ConnectionRequestStatus.REJECTED.value, ConnectionRequestStatus.CANCELLED.value]}
+        })
+
+        logger.warning(
+            "REJECTED REQUEST CHECK: sender=%s recipient=%s found=%s",
+            sender_id,
+            recipient_id,
+            existing_rejected is not None
+        )
+
+        if existing_rejected:
+            logger.warning(
+                "REUSING REJECTED REQUEST: _id=%s old_status=%s new_status=pending",
+                existing_rejected["_id"],
+                existing_rejected["status"]
+            )
+            # Reuse the existing rejected/cancelled request instead of creating a new one
+            # Update sender_id and recipient_id to reflect the new connection attempt direction
+            result = await db.buddy_requests.update_one(
+                {"_id": existing_rejected["_id"]},
+                {
+                    "$set": {
+                        "sender_id": sender_id,
+                        "recipient_id": recipient_id,
+                        "status": ConnectionRequestStatus.PENDING.value,
+                        "updated_at": datetime.utcnow()
+                    }
+                }
+            )
+
+            logger.warning(
+                "UPDATE RESULT: matched_count=%s modified_count=%s",
+                result.matched_count,
+                result.modified_count
+            )
+            logger.warning(f"DEBUG: Update result: matched_count={result.matched_count}, modified_count={result.modified_count}")
+            # Fetch the updated request
+            request_dict = await db.buddy_requests.find_one({"_id": existing_rejected["_id"]})
+
+            # Convert to proper object
+            request = ConnectionRequestInDB(
+                id=request_dict["_id"],
+                sender_id=sender_id,
+                recipient_id=recipient_id,
+                status=ConnectionRequestStatus.PENDING,
+                message=request_dict.get("message"),
+            )
+        else:
+            # No existing rejected/cancelled request, create a new one
+            request = ConnectionRequestInDB(
+                sender_id=sender_id,
+                recipient_id=recipient_id,
+                status=ConnectionRequestStatus.PENDING,
+                message=message,
+            )
+            result = await db.buddy_requests.insert_one(request.model_dump(exclude={"id"}))
+            request.id = ObjectId(result.inserted_id)
 
         # Get sender details
         sender_user = await db.users.find_one({"_id": ObjectId(sender_id)})
@@ -426,7 +526,7 @@ class StudyBuddyService:
     @staticmethod
     async def get_pending_requests(user_id: str) -> List[ConnectionRequestResponse]:
         """
-        Get all pending connection requests for a user.
+        Get all pending connection requests for a user (both incoming and outgoing).
 
         Args:
             user_id: User ID
@@ -436,16 +536,24 @@ class StudyBuddyService:
         """
         db = await get_database()
 
-        # Get incoming requests
+        # Get both incoming requests (where user is recipient) AND outgoing requests (where user is sender)
         cursor = db.buddy_requests.find({
-            "recipient_id": user_id,
-            "status": ConnectionRequestStatus.PENDING.value,
+            "$or": [
+                {"recipient_id": user_id, "status": ConnectionRequestStatus.PENDING.value},
+                {"sender_id": user_id, "status": ConnectionRequestStatus.PENDING.value},
+            ]
         }).sort("created_at", -1)
 
         requests = []
         async for doc in cursor:
+            # Determine if this is incoming or outgoing
+            is_incoming = doc["recipient_id"] == user_id
+
             # Get sender details
             sender_user = await db.users.find_one({"_id": ObjectId(doc["sender_id"])})
+
+            # For incoming requests, recipient_id is the other user
+            # For outgoing requests, recipient_id is still the other user
             requests.append(ConnectionRequestResponse(
                 id=str(doc["_id"]),
                 sender_id=doc["sender_id"],
@@ -474,17 +582,42 @@ class StudyBuddyService:
         """
         db = await get_database()
 
+        logger.warning(
+            "RESPOND REQUEST START: request_id=%s user=%s action=%s",
+            request_id,
+            user_id,
+            action
+        )
+
         # Get request
         request = await db.buddy_requests.find_one({"_id": ObjectId(request_id)})
         if not request:
+            logger.warning("ERROR: Request not found: %s", request_id)
             raise ValueError("Request not found")
+
+        logger.warning(
+            "REQUEST FOUND BEFORE: _id=%s sender=%s recipient=%s status=%s",
+            request["_id"],
+            request["sender_id"],
+            request["recipient_id"],
+            request["status"]
+        )
 
         # Verify ownership
         if request["recipient_id"] != user_id:
+            logger.warning(
+                "ERROR: Not authorized - request recipient=%s, user=%s",
+                request["recipient_id"],
+                user_id
+            )
             raise ValueError("Not authorized to respond to this request")
 
         # Check status
         if request["status"] != ConnectionRequestStatus.PENDING.value:
+            logger.warning(
+                "ERROR: Request already processed - status=%s",
+                request["status"]
+            )
             raise ValueError("Request has already been processed")
 
         # Update status
@@ -495,9 +628,81 @@ class StudyBuddyService:
         else:
             raise ValueError("Invalid action. Use 'accept' or 'reject'")
 
-        await db.buddy_requests.update_one(
+        logger.warning(
+            "PERFORMING UPDATE: _id=%s status=%s -> %s",
+            request_id,
+            request["status"],
+            new_status
+        )
+
+        result = await db.buddy_requests.update_one(
             {"_id": ObjectId(request_id)},
             {"$set": {"status": new_status, "updated_at": datetime.utcnow()}}
+        )
+
+        logger.warning(
+            "UPDATE RESULT: matched_count=%s modified_count=%s",
+            result.matched_count,
+            result.modified_count
+        )
+
+        # Get updated request
+        updated_request = await db.buddy_requests.find_one({"_id": ObjectId(request_id)})
+        sender_user = await db.users.find_one({"_id": ObjectId(updated_request["sender_id"])})
+
+        logger.warning(
+            "RESPOND REQUEST SUCCESS: _id=%s status=%s",
+            request_id,
+            updated_request["status"]
+        )
+
+        return ConnectionRequestResponse(
+            id=str(updated_request["_id"]),
+            sender_id=updated_request["sender_id"],
+            recipient_id=updated_request["recipient_id"],
+            status=ConnectionRequestStatus(new_status) if new_status else ConnectionRequestStatus.PENDING,
+            message=updated_request.get("message"),
+            sender_full_name=sender_user.get("full_name", "Anonymous") if sender_user else "Anonymous",
+            sender_avatar_url=None,
+            created_at=updated_request["created_at"],
+        )
+
+    @staticmethod
+    async def cancel_connection_request(request_id: str, sender_id: str) -> ConnectionRequestResponse:
+        """
+        Cancel a pending connection request.
+
+        Only the sender can cancel their own pending request.
+
+        Args:
+            request_id: Request ID
+            sender_id: User ID of the sender (who can only cancel their own request)
+
+        Returns:
+            Cancelled ConnectionRequestResponse
+
+        Raises:
+            ValueError: If request not found, not pending, or not sent by sender
+        """
+        db = await get_database()
+
+        # Get request
+        request = await db.buddy_requests.find_one({"_id": ObjectId(request_id)})
+        if not request:
+            raise ValueError("Connection request not found")
+
+        # Verify ownership (only sender can cancel)
+        if request["sender_id"] != sender_id:
+            raise ValueError("Only the sender can cancel their own connection request")
+
+        # Check status (only pending requests can be cancelled)
+        if request["status"] != ConnectionRequestStatus.PENDING.value:
+            raise ValueError("Cannot cancel request that is not pending")
+
+        # Update status to cancelled
+        await db.buddy_requests.update_one(
+            {"_id": ObjectId(request_id)},
+            {"$set": {"status": ConnectionRequestStatus.CANCELLED.value, "updated_at": datetime.utcnow()}}
         )
 
         # Get updated request
@@ -508,7 +713,7 @@ class StudyBuddyService:
             id=str(updated_request["_id"]),
             sender_id=updated_request["sender_id"],
             recipient_id=updated_request["recipient_id"],
-            status=ConnectionRequestStatus(new_status) if new_status else ConnectionRequestStatus.PENDING,
+            status=ConnectionRequestStatus.CANCELLED,
             message=updated_request.get("message"),
             sender_full_name=sender_user.get("full_name", "Anonymous") if sender_user else "Anonymous",
             sender_avatar_url=None,

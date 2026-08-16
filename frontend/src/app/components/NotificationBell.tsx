@@ -4,28 +4,37 @@ import { Bell, Check, Mail, Clock, Trophy, BookOpen, X } from "lucide-react";
 import { useStore } from "../store";
 import { useProactiveStore, UnreadByCompanion } from "../stores/useProactiveStore";
 import { cn, companionColorClasses } from "../utils";
+import { createPortal } from "react-dom";
 
 export default function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const bellRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const portalRef = useRef<HTMLElement | null>(null);
   const navigate = useNavigate();
-  
+  const isFirstRender = useRef(true);
+  const renderCount = useRef(0);
+
   const authToken = useStore(state => state.authToken);
   const companions = useStore(state => state.companions);
-  
-  const { 
-    unreadMessages, 
-    unreadCount, 
-    isLoading, 
-    fetchUnread, 
+
+  const {
+    unreadMessages,
+    unreadCount,
+    isLoading,
+    fetchUnread,
     markAsRead,
     markAllForCompanionAsRead,
     pollUnread,
   } = useProactiveStore();
 
+  renderCount.current += 1;
+  console.log('[NotificationBell] Render', renderCount.current, { isOpen, portalReady: !!portalRef.current });
+
   // Check if mobile on mount and resize
   useEffect(() => {
+    console.log('[NotificationBell] Render', renderCount.current, { isOpen, portalReady: !!portalRef.current });
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768);
     };
@@ -34,34 +43,64 @@ export default function NotificationBell() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // Log isOpen state changes
+  useEffect(() => {
+    console.log('[NotificationBell] isOpen changed:', isOpen);
+  }, [isOpen]);
+
   // Close dropdown when clicking outside
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+    if (!isOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+
+      const clickedBell = bellRef.current?.contains(target);
+      const clickedDropdown = dropdownRef.current?.contains(target);
+
+      if (!clickedBell && !clickedDropdown) {
+        console.log('[NotificationBell] Closing dropdown due to outside click');
         setIsOpen(false);
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+    document.addEventListener("mousedown", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [isOpen]);
 
   // Initial fetch and polling
   useEffect(() => {
+    console.log('[NotificationBell] Fetching unread notifications');
     if (authToken) {
       fetchUnread(authToken);
-      
+
       // Poll every 5 minutes
       const pollInterval = setInterval(() => {
         pollUnread(authToken);
       }, 5 * 60 * 1000);
-      
+
       return () => clearInterval(pollInterval);
     }
   }, [authToken, fetchUnread, pollUnread]);
 
+  // Create portal container on mount - only once
+  useEffect(() => {
+    if (isFirstRender.current) {
+      portalRef.current = document.getElementById('portal-root');
+      console.log('[NotificationBell] Portal root found:', !!portalRef.current);
+      if (portalRef.current) {
+        console.log('[NotificationBell] Portal root element:', portalRef.current);
+      }
+      isFirstRender.current = false;
+    }
+  }, []);
+
   const handleMarkAsRead = async (messageId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    console.log('[NotificationBell] Marking as read:', messageId);
     if (authToken) {
       await markAsRead(messageId, authToken);
     }
@@ -69,6 +108,7 @@ export default function NotificationBell() {
 
   const handleMarkAllAsRead = async (companionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    console.log('[NotificationBell] Marking all as read for companion:', companionId);
     if (authToken) {
       await markAllForCompanionAsRead(companionId, authToken);
     }
@@ -79,7 +119,7 @@ export default function NotificationBell() {
     if (authToken && !message.is_read) {
       await markAsRead(message.id, authToken);
     }
-    
+
     // Navigate to chat
     navigate(`/app/chat/${companionId}`);
     setIsOpen(false);
@@ -120,7 +160,7 @@ export default function NotificationBell() {
     return (
       <>
         {/* Backdrop */}
-        <div 
+        <div
           className="fixed inset-0 bg-black/60 z-50"
           onClick={() => setIsOpen(false)}
         />
@@ -136,14 +176,14 @@ export default function NotificationBell() {
                 </span>
               )}
             </div>
-            <button 
+            <button
               onClick={() => setIsOpen(false)}
               className="p-2 hover:bg-slate-800 rounded-lg transition-colors"
             >
               <X className="w-5 h-5 text-slate-400" />
             </button>
           </div>
-          
+
           <div className="overflow-y-auto max-h-[60vh] p-4 space-y-4">
             {isLoading ? (
               <div className="text-center py-8">
@@ -162,13 +202,13 @@ export default function NotificationBell() {
                     <div className="flex items-center gap-2">
                       <div className={cn(
                         "w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold",
-                        companionColorClasses[group.companion_id === 'c1' ? 'blue' : 
-                          group.companion_id === 'c2' ? 'pink' : 
-                          group.companion_id === 'c3' ? 'purple' : 
+                        companionColorClasses[group.companion_id === 'c1' ? 'blue' :
+                          group.companion_id === 'c2' ? 'pink' :
+                          group.companion_id === 'c3' ? 'purple' :
                           group.companion_id === 'c4' ? 'red' : 'cyan'].bg,
-                        companionColorClasses[group.companion_id === 'c1' ? 'blue' : 
-                          group.companion_id === 'c2' ? 'pink' : 
-                          group.companion_id === 'c3' ? 'purple' : 
+                        companionColorClasses[group.companion_id === 'c1' ? 'blue' :
+                          group.companion_id === 'c2' ? 'pink' :
+                          group.companion_id === 'c3' ? 'purple' :
                           group.companion_id === 'c4' ? 'red' : 'cyan'].text
                       )}>
                         {group.companion_name.charAt(0)}
@@ -209,9 +249,14 @@ export default function NotificationBell() {
 
   // Desktop dropdown
   return (
-    <div ref={dropdownRef} className="relative">
+    <div ref={bellRef} className="relative">
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          console.log('[NotificationBell] Bell clicked, isOpen:', isOpen);
+          console.log('[NotificationBell] About to call setIsOpen(!isOpen)');
+          setIsOpen(!isOpen);
+          console.log('[NotificationBell] setIsOpen called');
+        }}
         className={cn(
           "relative p-2 rounded-lg transition-colors",
           isOpen ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white hover:bg-slate-800/50"
@@ -225,93 +270,96 @@ export default function NotificationBell() {
         )}
       </button>
 
-      {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-96 bg-slate-800 border border-slate-700 rounded-xl shadow-xl z-50 overflow-hidden">
-          <div className="p-3 border-b border-slate-700 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Bell className="w-4 h-4 text-slate-400" />
-              <h3 className="font-semibold text-white text-sm">Notifications</h3>
-              {unreadCount > 0 && (
-                <span className="bg-red-500 text-white text-xs font-medium px-1.5 py-0.5 rounded-full">
-                  {unreadCount}
-                </span>
+      {isOpen && portalRef.current && (
+        createPortal(
+          <div ref={dropdownRef} className="fixed z-50 bg-slate-800 border border-slate-700 rounded-xl shadow-xl overflow-hidden min-w-[400px] max-w-[480px]">
+            <div className="p-3 border-b border-slate-700 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Bell className="w-4 h-4 text-slate-400" />
+                <h3 className="font-semibold text-white text-sm">Notifications</h3>
+                {unreadCount > 0 && (
+                  <span className="bg-red-500 text-white text-xs font-medium px-1.5 py-0.5 rounded-full">
+                    {unreadCount}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="max-h-96 overflow-y-auto">
+              {isLoading ? (
+                <div className="text-center py-8">
+                  <div className="w-6 h-6 border-2 border-slate-600 border-t-slate-300 rounded-full animate-spin mx-auto mb-2" />
+                  <p className="text-slate-500 text-sm">Loading...</p>
+                </div>
+              ) : unreadMessages.length === 0 ? (
+                <div className="text-center py-8">
+                  <Bell className="w-10 h-10 text-slate-600 mx-auto mb-2" />
+                  <p className="text-slate-400 text-sm">No new notifications</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-700/50">
+                  {unreadMessages.map((group) => (
+                    <div key={group.companion_id} className="p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <div className={cn(
+                            "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold",
+                            companionColorClasses[group.companion_id === 'c1' ? 'blue' :
+                              group.companion_id === 'c2' ? 'pink' :
+                              group.companion_id === 'c3' ? 'purple' :
+                              group.companion_id === 'c4' ? 'red' : 'cyan'].bg,
+                            companionColorClasses[group.companion_id === 'c1' ? 'blue' :
+                              group.companion_id === 'c2' ? 'pink' :
+                              group.companion_id === 'c3' ? 'purple' :
+                              group.companion_id === 'c4' ? 'red' : 'cyan'].text
+                          )}>
+                            {group.companion_name.charAt(0)}
+                          </div>
+                          <span className="font-medium text-white text-sm">{group.companion_name}</span>
+                          <span className="text-xs text-slate-500">({group.unread_count})</span>
+                        </div>
+                        <button
+                          onClick={(e) => handleMarkAllAsRead(group.companion_id, e)}
+                          className="text-xs text-slate-400 hover:text-white px-2 py-0.5 rounded hover:bg-slate-700 transition-colors"
+                        >
+                          Mark all
+                        </button>
+                      </div>
+                      <div className="space-y-1.5">
+                        {group.messages.slice(0, 3).map((message) => (
+                          <button
+                            key={message.id}
+                            onClick={() => handleMessageClick(message, group.companion_id)}
+                            className="w-full text-left p-2 rounded-lg bg-slate-700/30 hover:bg-slate-700/50 transition-colors group"
+                          >
+                            <div className="flex items-start gap-2">
+                              <span className="text-slate-400 mt-0.5">{getTriggerIcon(message.trigger_type)}</span>
+                              <p className="text-sm text-slate-200 line-clamp-2 flex-1 group-hover:text-white transition-colors">
+                                {message.content}
+                              </p>
+                              <span className="text-xs text-slate-500 shrink-0">
+                                {formatTimestamp(message.sent_at)}
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                        {group.messages.length > 3 && (
+                          <button
+                            onClick={() => navigate(`/app/chat/${group.companion_id}`)}
+                            className="w-full text-center py-1.5 text-xs text-slate-400 hover:text-white transition-colors"
+                          >
+                            +{group.messages.length - 3} more messages
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-          </div>
-          
-          <div className="max-h-96 overflow-y-auto">
-            {isLoading ? (
-              <div className="text-center py-8">
-                <div className="w-6 h-6 border-2 border-slate-600 border-t-slate-300 rounded-full animate-spin mx-auto mb-2" />
-                <p className="text-slate-500 text-sm">Loading...</p>
-              </div>
-            ) : unreadMessages.length === 0 ? (
-              <div className="text-center py-8">
-                <Bell className="w-10 h-10 text-slate-600 mx-auto mb-2" />
-                <p className="text-slate-400 text-sm">No new notifications</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-slate-700/50">
-                {unreadMessages.map((group) => (
-                  <div key={group.companion_id} className="p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-2">
-                        <div className={cn(
-                          "w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold",
-                          companionColorClasses[group.companion_id === 'c1' ? 'blue' : 
-                            group.companion_id === 'c2' ? 'pink' : 
-                            group.companion_id === 'c3' ? 'purple' : 
-                            group.companion_id === 'c4' ? 'red' : 'cyan'].bg,
-                          companionColorClasses[group.companion_id === 'c1' ? 'blue' : 
-                            group.companion_id === 'c2' ? 'pink' : 
-                            group.companion_id === 'c3' ? 'purple' : 
-                            group.companion_id === 'c4' ? 'red' : 'cyan'].text
-                        )}>
-                          {group.companion_name.charAt(0)}
-                        </div>
-                        <span className="font-medium text-white text-sm">{group.companion_name}</span>
-                        <span className="text-xs text-slate-500">({group.unread_count})</span>
-                      </div>
-                      <button
-                        onClick={(e) => handleMarkAllAsRead(group.companion_id, e)}
-                        className="text-xs text-slate-400 hover:text-white px-2 py-0.5 rounded hover:bg-slate-700 transition-colors"
-                      >
-                        Mark all
-                      </button>
-                    </div>
-                    <div className="space-y-1.5">
-                      {group.messages.slice(0, 3).map((message) => (
-                        <button
-                          key={message.id}
-                          onClick={() => handleMessageClick(message, group.companion_id)}
-                          className="w-full text-left p-2 rounded-lg bg-slate-700/30 hover:bg-slate-700/50 transition-colors group"
-                        >
-                          <div className="flex items-start gap-2">
-                            <span className="text-slate-400 mt-0.5">{getTriggerIcon(message.trigger_type)}</span>
-                            <p className="text-sm text-slate-200 line-clamp-2 flex-1 group-hover:text-white transition-colors">
-                              {message.content}
-                            </p>
-                            <span className="text-xs text-slate-500 shrink-0">
-                              {formatTimestamp(message.sent_at)}
-                            </span>
-                          </div>
-                        </button>
-                      ))}
-                      {group.messages.length > 3 && (
-                        <button
-                          onClick={() => navigate(`/app/chat/${group.companion_id}`)}
-                          className="w-full text-center py-1.5 text-xs text-slate-400 hover:text-white transition-colors"
-                        >
-                          +{group.messages.length - 3} more messages
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+          </div>,
+          portalRef.current
+        )
       )}
     </div>
   );

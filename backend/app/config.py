@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -135,32 +135,27 @@ class Settings(BaseSettings):
         init=False
     )
     cors_origins: str = Field(
-        default="http://localhost:*,http://localhost:3000,http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5179,http://localhost:5180,http://localhost:5181",
-        alias="CORS_ORIGINS_STR"
+        default="http://localhost:*,http://localhost:3000,http://localhost:5173,http://localhost:5174,http://localhost:5175,http://localhost:5176,http://localhost:5177,http://localhost:5178,http://localhost:5179,http://localhost:5180,http://localhost:5181",
+        alias="CORS_ORIGINS"
     )
 
-    @field_validator("cors_allow_origins", mode="after")
+    @model_validator(mode="before")
     @classmethod
-    def validate_cors_origins(cls, v):
-        # If v is None or empty string or whitespace, return default
-        if not v or (isinstance(v, str) and not v.strip()):
-            # Get app_env from environment
-            import os
-            app_env = os.environ.get("APP_ENV", "development")
-            if app_env == "production":
-                return ["https://ai-campus-companion.onrender.com"]
-            else:
-                return ["http://localhost:3000"]
+    def validate_cors_origins(cls, values):
+        """Validate and parse CORS origins from environment."""
+        cors_origins = values.get("CORS_ORIGINS", "")
 
-        if isinstance(v, str):
-            # Split comma-separated string
-            return [item.strip() for item in v.split(",") if item.strip()]
+        if cors_origins:
+            try:
+                import json
+                origins = json.loads(cors_origins)
+                values["cors_allow_origins"] = origins
+            except json.JSONDecodeError:
+                # If not JSON, try comma-separated parsing
+                origins = [item.strip() for item in cors_origins.split(",") if item.strip()]
+                values["cors_allow_origins"] = origins
 
-        # If it's already a list, return it
-        if isinstance(v, list):
-            return v
-
-        return ["https://ai-campus-companion.onrender.com"]
+        return values
 
     @field_validator("cors_allow_origins")
     @classmethod
