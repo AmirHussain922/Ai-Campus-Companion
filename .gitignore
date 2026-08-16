@@ -78,6 +78,14 @@ Thumbs.db
 .env.*.local
 .env.backup
 .env.render
+*.pem
+*.key
+*credentials*
+*secret*
+*token*
+*_secrets.txt
+cookies_*.txt
+*.json.backup
 
 # Credentials and secrets
 *.pem
@@ -337,7 +345,6 @@ restart_servers.ps1
 *.backup
 *.bak
 *.ps1
-*_start.sh
 *_setup.py
 *_debug.py
 *_check.py
