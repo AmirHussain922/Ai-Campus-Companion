@@ -28,7 +28,7 @@ pymongo>=4.8.0
 
 # Authentication and Security
 passlib[bcrypt]==1.7.4
-pyjwt==2.8.0
+pyjwt>=2.10.1
 python-jose[cryptography]==3.3.0
 bcrypt==4.1.2
 
