@@ -8,6 +8,7 @@ including database connections, authentication, email, and security settings.
 from __future__ import annotations
 
 from functools import lru_cache
+import json
 from pathlib import Path
 from typing import Optional
 
@@ -340,6 +341,21 @@ class Settings(BaseSettings):
             raise ValueError('ACCESS_TOKEN_EXPIRE_MINUTES should be at least 5 minutes')
         if v > 60:
             raise ValueError('ACCESS_TOKEN_EXPIRE_MINUTES should not exceed 60 minutes for security')
+        return v
+
+    @field_validator('companion_models')
+    @classmethod
+    def validate_companion_models(cls, v: dict[str, str] | str) -> dict[str, str]:
+        """Validate and parse COMPANION_MODELS from environment variable."""
+        # If it's a string, try to parse it as JSON
+        if isinstance(v, str):
+            if v.strip():
+                try:
+                    return json.loads(v)
+                except json.JSONDecodeError as e:
+                    raise ValueError(f'COMPANION_MODELS must be valid JSON. Error: {e}')
+            else:
+                raise ValueError('COMPANION_MODELS cannot be empty')
         return v
 
 
