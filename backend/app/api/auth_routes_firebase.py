@@ -17,15 +17,15 @@ from pydantic import BaseModel, EmailStr, Field
 
 from app.config import get_settings
 from app.core.database import get_database
+from app.core.security import mask_email, sanitize_input
+from app.core.error_responses import AppException
+from app.models import APIResponse
 from app.services.firebase_auth_service import (
     login_user,
     register_user,
     reset_password,
     verify_id_token
 )
-from app.core.error_responses import AppException
-from app.models import APIResponse
-from app.utils.helpers import mask_email, sanitize_input
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
