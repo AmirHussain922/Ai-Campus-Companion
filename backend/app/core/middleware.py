@@ -207,6 +207,8 @@ def setup_security_middleware(app: FastAPI) -> None:
     settings = get_settings()
 
     # 1. Trusted Host Middleware (in production)
+    logger.info(f"Configuring TrustedHostMiddleware - app_env: {settings.app_env}, cors_allow_origins: {settings.cors_allow_origins}")
+
     if settings.app_env == "production":
         allowed_hosts = ["localhost", "127.0.0.1"]
         # Add origins from CORS settings
@@ -218,7 +220,9 @@ def setup_security_middleware(app: FastAPI) -> None:
             TrustedHostMiddleware,
             allowed_hosts=allowed_hosts
         )
-        logger.info(f"TrustedHostMiddleware configured with hosts: {allowed_hosts}")
+        logger.info(f"✅ TrustedHostMiddleware configured with hosts: {allowed_hosts}")
+    else:
+        logger.info("⚠️  TrustedHostMiddleware not enabled (development mode)")
 
     # 2. Security Headers Middleware
     app.add_middleware(SecurityHeadersMiddleware)
