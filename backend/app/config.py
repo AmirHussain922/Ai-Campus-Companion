@@ -177,6 +177,28 @@ class Settings(BaseSettings):
                             )
         return v
 
+    @field_validator("cors_allow_methods")
+    @classmethod
+    def validate_cors_allow_methods(cls, v: str | list[str]) -> list[str]:
+        """Validate and parse CORS allow methods."""
+        # If it's a string, try to parse as comma-separated list
+        if isinstance(v, str):
+            if v.strip():
+                return [method.strip().upper() for method in v.split(',')]
+            return ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+        return v
+
+    @field_validator("cors_allow_headers")
+    @classmethod
+    def validate_cors_allow_headers(cls, v: str | list[str]) -> list[str]:
+        """Validate and parse CORS allow headers."""
+        # If it's a string, try to parse as comma-separated list
+        if isinstance(v, str):
+            if v.strip():
+                return [header.strip() for header in v.split(',')]
+            return ["Content-Type", "Authorization"]
+        return v
+
     cors_allow_credentials: bool = Field(
         default=True,
         alias="CORS_ALLOW_CREDENTIALS"
