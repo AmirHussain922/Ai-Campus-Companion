@@ -37,7 +37,7 @@ from app.core.error_responses import (
 )
 
 # Import routers
-from app.api.auth_routes_firebase import router as auth_router
+from app.api.auth_routes import router as auth_router
 from app.api.chat_routes import router as chat_router
 from app.api.contact_routes import router as contact_router
 from app.api.health_routes import router as health_router

@@ -322,46 +322,6 @@ class Settings(BaseSettings):
         alias="OPENROUTER_MODEL"
     )
 
-    # ============================================
-    # Firebase Configuration
-    # ============================================
-    firebase_project_id: Optional[str] = Field(
-        default=None,
-        alias="FIREBASE_PROJECT_ID"
-    )
-    firebase_private_key_id: Optional[str] = Field(
-        default=None,
-        alias="FIREBASE_PRIVATE_KEY_ID"
-    )
-    firebase_private_key: Optional[str] = Field(
-        default=None,
-        alias="FIREBASE_PRIVATE_KEY"
-    )
-    firebase_client_email: Optional[str] = Field(
-        default=None,
-        alias="FIREBASE_CLIENT_EMAIL"
-    )
-    firebase_client_id: Optional[str] = Field(
-        default=None,
-        alias="FIREBASE_CLIENT_ID"
-    )
-    firebase_auth_uri: Optional[str] = Field(
-        default=None,
-        alias="FIREBASE_AUTH_URI"
-    )
-    firebase_token_uri: Optional[str] = Field(
-        default=None,
-        alias="FIREBASE_TOKEN_URI"
-    )
-    firebase_auth_provider_x509_cert_url: Optional[str] = Field(
-        default=None,
-        alias="FIREBASE_AUTH_PROVIDER_X509_CERT_URL"
-    )
-    firebase_client_x509_cert_url: Optional[str] = Field(
-        default=None,
-        alias="FIREBASE_CLIENT_X509_CERT_URL"
-    )
-
     get_model_for_companion: callable = None
     openrouter_embedding_model: str = Field(
         default="openai/text-embedding-3-small",
@@ -383,11 +343,11 @@ class Settings(BaseSettings):
     # ============================================
     # Companion Classification
     # ============================================
-    trainable_companions: list[str] = Field(
+    trainable_companions: list[str] | str = Field(
         default=["philosopher", "rival"],
         alias="TRAINABLE_COMPANIONS",
     )
-    demo_companions: list[str] = Field(
+    demo_companions: list[str] | str = Field(
         default=["party_friend", "freshman"],
         alias="DEMO_COMPANIONS",
     )
@@ -449,13 +409,23 @@ class Settings(BaseSettings):
         """Validate and parse COMPANION_MODELS from environment variable."""
         # If it's a string, try to parse it as JSON
         if isinstance(v, str):
-            if v.strip():
-                try:
-                    return json.loads(v)
-                except json.JSONDecodeError as e:
-                    raise ValueError(f'COMPANION_MODELS must be valid JSON. Error: {e}')
-            else:
-                raise ValueError('COMPANION_MODELS cannot be empty')
+            # Check for empty or whitespace-only strings
+            if not v or not v.strip():
+                # Return default value if empty
+                return {
+                    "philosopher": "nvidia/nemotron-3-ultra-550b-a55b:free",
+                    "rival": "mistralai/mistral-small-3.1-24b-instruct:free",
+                    "party_friend": "google/gemma-4-31b-it:free",
+                    "freshman": "openai/gpt-oss-20b:free",
+                }
+            try:
+                parsed = json.loads(v)
+                if isinstance(parsed, dict):
+                    return parsed
+                else:
+                    raise ValueError(f'COMPANION_MODELS must be a JSON object (dictionary), got {type(parsed).__name__}')
+            except json.JSONDecodeError as e:
+                raise ValueError(f'COMPANION_MODELS must be valid JSON. Error: {e}')
         return v
 
 
